@@ -1,0 +1,26 @@
+spring:
+  application:
+    name: taskhub-backend
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:sqlserver://localhost:1433;databaseName=TaskhubData;encrypt=false;trustServerCertificate=true}
+    username: ${SPRING_DATASOURCE_USERNAME:sa}
+    password: ${SPRING_DATASOURCE_PASSWORD:sa}
+    driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
+
+  jpa:
+    hibernate:
+      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:update}
+    show-sql: ${SPRING_JPA_SHOW_SQL:false}
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.SQLServerDialect
+        format_sql: true
+
+server:
+  port: ${PORT:${SERVER_PORT:8080}}
+
+app:
+  jwt:
+    secret: ${APP_JWT_SECRET:dev-only-default-secret-change-me}
+    expiration-ms: ${APP_JWT_EXPIRATION_MS:86400000}
