@@ -22,6 +22,10 @@ public class Escrow {
     @Column(precision = 12, scale = 2, nullable = false)
     private BigDecimal amount;
 
+    @Column(precision = 12, scale = 2, nullable = false)
+    @Builder.Default
+    private BigDecimal platformFee = BigDecimal.ZERO;
+
     @Enumerated(EnumType.STRING)
     @Builder.Default
     private EscrowStatus status = EscrowStatus.PENDING;

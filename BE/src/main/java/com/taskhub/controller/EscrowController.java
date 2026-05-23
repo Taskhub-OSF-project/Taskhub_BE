@@ -24,4 +24,10 @@ public class EscrowController {
         escrowService.releaseEscrow(taskId);
         return ResponseEntity.ok(ApiResponse.ok("Escrow released", null));
     }
+
+    @PostMapping("/refund/{taskId}")
+    public ResponseEntity<ApiResponse<Void>> refund(@PathVariable UUID taskId) {
+        escrowService.refundEscrow(taskId);
+        return ResponseEntity.ok(ApiResponse.ok("Escrow refunded", null));
+    }
 }
