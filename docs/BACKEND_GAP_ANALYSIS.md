@@ -6,14 +6,14 @@
 
 ## Phase 1 — Ví, escrow, state machine
 
-- [ ] Entity `WalletTransaction` (`top_up`, `escrow_deduction`, `refund`) + `balanceAfter`
-- [ ] `GET /api/wallet/transactions` — lịch sử giao dịch
-- [ ] Phí nền tảng **5%** khi fund escrow (trừ `budget + fee`, ghi ledger)
-- [ ] Tách fund và publish: fund → `ESCROW_FUNDED`, `POST /api/tasks/{id}/publish` → `ACTIVE`
-- [ ] `approveSubmission` tự gọi `releaseEscrow` (chuyển tiền sang ví student)
-- [ ] `POST /api/escrow/refund/{taskId}` — hoàn tiền khi dispute → revision / re-publish
-- [ ] Sửa state machine: thêm `SUBMITTED → IN_PROGRESS` (revision), thoát được `DISPUTED`
-- [ ] Sửa `approveSubmission` + `fundEscrow` + `requestRevision` dùng `validateTransition` nhất quán
+- [x] Entity `WalletTransaction` (`top_up`, `escrow_deduction`, `refund`) + `balanceAfter`
+- [x] `GET /api/wallet/transactions` — lịch sử giao dịch
+- [x] Phí nền tảng **5%** khi fund escrow (trừ `budget + fee`, ghi ledger)
+- [x] Tách fund và publish: fund → `ESCROW_FUNDED`, `POST /api/tasks/{id}/publish` → `ACTIVE`
+- [x] `approveSubmission` tự gọi `releaseEscrow` (chuyển tiền sang ví student)
+- [x] `POST /api/escrow/refund/{taskId}` — hoàn tiền khi dispute → revision / re-publish
+- [x] Sửa state machine: thêm `SUBMITTED → IN_PROGRESS` (revision), thoát được `DISPUTED`
+- [x] Sửa `approveSubmission` + `fundEscrow` + `requestRevision` dùng `validateTransition` nhất quán
 
 ---
 

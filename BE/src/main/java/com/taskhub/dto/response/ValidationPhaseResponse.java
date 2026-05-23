@@ -1,5 +1,6 @@
 package com.taskhub.dto.response;
 
+import com.taskhub.entity.CriteriaValidationDetail;
 import com.taskhub.service.AiValidationService;
 import lombok.*;
 
@@ -11,6 +12,7 @@ public class ValidationPhaseResponse {
     private String blockReason;
     private boolean canProceed;
     private String message;
+    private List<CriteriaValidationDetail> details;
     private List<AiValidationService.CriteriaSuggestion> suggestions;
-    private TaskResponse taskResponse; // Nếu thành công
+    private TaskResponse taskResponse;
 }

@@ -1,14 +1,21 @@
 # TaskHub Backend — Spring Boot
 
 ## Prerequisites
-- Java 21
-- PostgreSQL (create DB: `taskhub`)
+- Java 21 (JDK 21 khuyến nghị; JDK 24 cần Lombok 1.18.38+)
 - Maven
 
-## Setup
-1. Create PostgreSQL database: `CREATE DATABASE taskhub;`
-2. Update `src/main/resources/application.yml` with your DB credentials and a secure JWT secret (min 256-bit)
-3. Run: `./mvnw spring-boot:run`
+## Setup (local — không cần SQL Server)
+
+1. Maven reload project
+2. Run `TaskHubApplication` — profile mặc định **`dev`** dùng H2 in-memory
+3. API: http://localhost:8080 — Swagger: http://localhost:8080/swagger-ui.html
+
+Chi tiết DB: [docs/DATABASE_SETUP.md](../docs/DATABASE_SETUP.md)  
+**API đầy đủ:** [docs/API_REFERENCE.md](../docs/API_REFERENCE.md)
+
+## SQL Server (tùy chọn)
+
+Set `SPRING_PROFILES_ACTIVE=sqlserver` và `SPRING_DATASOURCE_PASSWORD=<your-sa-password>`.
 
 ## API Endpoints
 

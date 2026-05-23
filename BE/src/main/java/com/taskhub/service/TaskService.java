@@ -22,13 +22,16 @@ import java.util.UUID;
 public class TaskService {
     private final TaskRepository taskRepository;
     private final AiValidationService aiValidation;
-    // Remove unused criteriaRepository
+    private final WalletService walletService;
 
     @Transactional
     public TaskResponse createTask(CreateTaskRequest req) {
         User hirer = AuthUtil.getCurrentUser();
         if (hirer.getRole() != Role.HIRER)
             throw TaskHubException.forbidden("Only hirers can create tasks");
+
+        walletService.requireSufficientForCreateTask(req.getBudget());
+        requireValidCriteria(req.getAcceptanceCriteria());
 
         Task task = Task.builder()
                 .title(req.getTitle()).description(req.getDescription())
@@ -76,38 +79,43 @@ public class TaskService {
             throw TaskHubException.badRequest("Cannot lock: " + result.message());
         }
 
-        task.setStatus(TaskStatus.LOCKED);
+        transition(task, TaskStatus.LOCKED);
         return toResponse(taskRepository.save(task));
     }
 
     @Transactional
     public TaskResponse transitionTask(UUID taskId, TaskStatus newStatus) {
         Task task = findTask(taskId);
-        validateTransition(task, newStatus);
-        task.setStatus(newStatus);
+        transition(task, newStatus);
+        return toResponse(taskRepository.save(task));
+    }
+
+    @Transactional
+    public TaskResponse publishTask(UUID taskId) {
+        Task task = findOwnedTask(taskId);
+        transition(task, TaskStatus.ACTIVE);
         return toResponse(taskRepository.save(task));
     }
 
     @Transactional
     public TaskResponse requestRevision(UUID taskId, RevisionRequest req) {
         Task task = findOwnedTask(taskId);
-        if (task.getStatus() != TaskStatus.SUBMITTED)
-            throw TaskHubException.badRequest("Can only request revision on submitted tasks");
+        if (task.getStatus() != TaskStatus.SUBMITTED && task.getStatus() != TaskStatus.DISPUTED)
+            throw TaskHubException.badRequest("Can only request revision on submitted or disputed tasks");
 
         for (AcceptanceCriteria c : task.getAcceptanceCriteria()) {
             if (req.getFailedCriteriaIds().contains(c.getId())) {
                 c.setStatus(CriteriaStatus.FAILED);
             }
         }
-        task.setStatus(TaskStatus.IN_PROGRESS);
+        transition(task, TaskStatus.IN_PROGRESS);
         return toResponse(taskRepository.save(task));
     }
 
     @Transactional
     public TaskResponse disputeTask(UUID taskId) {
         Task task = findTask(taskId);
-        validateTransition(task, TaskStatus.DISPUTED);
-        task.setStatus(TaskStatus.DISPUTED);
+        transition(task, TaskStatus.DISPUTED);
         return toResponse(taskRepository.save(task));
     }
 
@@ -125,12 +133,28 @@ public class TaskService {
         return task;
     }
 
+    public void transition(Task task, TaskStatus next) {
+        validateTransition(task, next);
+        task.setStatus(next);
+    }
+
     // ===== Private helpers =====
 
-    private void validateTransition(Task task, TaskStatus next) {
+    public void validateTransition(Task task, TaskStatus next) {
         if (!task.getStatus().canTransitionTo(next))
             throw TaskHubException.badRequest(
-                    "Invalid transition: " + task.getStatus() + " → " + next);
+                    "Invalid transition: " + task.getStatus() + " -> " + next);
+    }
+
+    public AiValidationService.ValidationResult validateCriteriaList(List<String> criteria) {
+        return aiValidation.validateCriteriaEnhanced(criteria);
+    }
+
+    public void requireValidCriteria(List<String> criteria) {
+        var result = aiValidation.validateCriteriaEnhanced(criteria);
+        if (!result.valid()) {
+            throw TaskHubException.invalidCriteria(result.message(), result);
+        }
     }
 
     TaskResponse toResponse(Task t) {

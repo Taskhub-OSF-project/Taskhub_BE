@@ -20,6 +20,7 @@ public class SubmissionService {
     private final TaskRepository taskRepo;
     private final AiValidationService aiValidation;
     private final TaskService taskService;
+    private final EscrowService escrowService;
 
     @Transactional
     public SubmissionResponse submit(UUID taskId, SubmissionRequest req) {
@@ -52,8 +53,7 @@ public class SubmissionService {
                 .build();
         submissionRepo.save(submission);
 
-        // Transition to SUBMITTED
-        task.setStatus(TaskStatus.SUBMITTED);
+        taskService.transition(task, TaskStatus.SUBMITTED);
         taskRepo.save(task);
 
         return toResponse(submission);
@@ -70,8 +70,9 @@ public class SubmissionService {
 
         // Mark all criteria as passed
         task.getAcceptanceCriteria().forEach(c -> c.setStatus(CriteriaStatus.PASSED));
-        task.setStatus(TaskStatus.COMPLETED);
+        taskService.transition(task, TaskStatus.COMPLETED);
         taskRepo.save(task);
+        escrowService.releaseEscrow(taskId);
     }
 
     public List<SubmissionResponse> getTaskSubmissions(UUID taskId) {

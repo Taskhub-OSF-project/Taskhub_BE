@@ -53,7 +53,7 @@ public class ApplicationService {
         appRepo.save(app);
 
         task.setAssignedTo(app.getStudent());
-        task.setStatus(TaskStatus.IN_PROGRESS);
+        taskService.transition(task, TaskStatus.IN_PROGRESS);
         taskRepo.save(task);
 
         // Reject other applications

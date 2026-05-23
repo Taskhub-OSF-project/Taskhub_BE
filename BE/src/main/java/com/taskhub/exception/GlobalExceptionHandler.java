@@ -9,8 +9,9 @@ import org.springframework.web.bind.annotation.*;
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(TaskHubException.class)
-    public ResponseEntity<ApiResponse<Void>> handle(TaskHubException ex) {
-        return ResponseEntity.status(ex.getStatus()).body(ApiResponse.error(ex.getMessage()));
+    public ResponseEntity<ApiResponse<Object>> handle(TaskHubException ex) {
+        ApiResponse<Object> body = ApiResponse.error(ex.getMessage(), ex.getErrorCode(), ex.getDetails());
+        return ResponseEntity.status(ex.getStatus()).body(body);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

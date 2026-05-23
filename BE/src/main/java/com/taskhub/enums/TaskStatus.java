@@ -17,8 +17,9 @@ public enum TaskStatus {
             case ESCROW_FUNDED -> next == ACTIVE;
             case ACTIVE -> next == IN_PROGRESS;
             case IN_PROGRESS -> next == SUBMITTED;
-            case SUBMITTED -> next == COMPLETED || next == DISPUTED;
-            case COMPLETED, DISPUTED -> false;
+            case SUBMITTED -> next == COMPLETED || next == DISPUTED || next == IN_PROGRESS;
+            case DISPUTED -> next == IN_PROGRESS || next == LOCKED;
+            case COMPLETED -> false;
         };
     }
 }
