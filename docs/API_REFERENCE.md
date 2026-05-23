@@ -32,8 +32,11 @@
 | DB production (tùy chọn) | SQL Server, profile `sqlserver` |
 | Phí nền tảng escrow | **5%** trên `budget` |
 | Tiền tệ | `BigDecimal` (VND trên FE) |
+| ID | **Số tự tăng** `1, 2, 3, ...` (`Long`, `GenerationType.IDENTITY`) |
 
 **Role:** `HIRER` | `STUDENT` — mỗi tài khoản một role.
+
+> API vẫn yêu cầu **JWT** — ID số chỉ để dễ test trong Swagger/Postman, không thay thế xác thực.
 
 ---
 
@@ -180,7 +183,7 @@ Base path: `/api/auth` — **Public**
 ```json
 {
   "token": "eyJhbGciOiJIUzI1NiIs...",
-  "userId": "uuid",
+  "userId": 1,
   "email": "hirer@example.com",
   "fullName": "Nguyen Van A",
   "role": "HIRER"
@@ -278,7 +281,7 @@ Lịch sử giao dịch ví (mới nhất trước).
 ```json
 [
   {
-    "id": "uuid",
+    "id": 1,
     "type": "top_up",
     "amount": 5000000,
     "balanceAfter": 5000000,
@@ -332,7 +335,7 @@ Chi tiết một task.
 
 | Field | Kiểu |
 |-------|------|
-| `id` | uuid |
+| `id` | number (1, 2, 3…) |
 | `title`, `description` | string |
 | `budget` | number |
 | `deadline` | ISO datetime |
@@ -486,7 +489,7 @@ Yêu cầu chỉnh sửa — **HIRER**, task `SUBMITTED` hoặc `DISPUTED`.
 
 ```json
 {
-  "failedCriteriaIds": ["uuid-criterion-1"],
+  "failedCriteriaIds": [2],
   "feedback": "Can bo sung file PDF..."
 }
 ```
@@ -521,9 +524,9 @@ Student apply — task phải **`ACTIVE`**.
 
 ```json
 {
-  "id": "uuid",
-  "taskId": "uuid",
-  "studentId": "uuid",
+  "id": 1,
+  "taskId": 1,
+  "studentId": 1,
   "studentName": "...",
   "coverLetter": "...",
   "status": "PENDING",
@@ -579,9 +582,9 @@ Student nộp bài — task `IN_PROGRESS`, đúng assignee.
 
 ```json
 {
-  "id": "uuid",
-  "taskId": "uuid",
-  "studentId": "uuid",
+  "id": 1,
+  "taskId": 1,
+  "studentId": 1,
   "studentName": "...",
   "fileUrl": "...",
   "notes": "...",

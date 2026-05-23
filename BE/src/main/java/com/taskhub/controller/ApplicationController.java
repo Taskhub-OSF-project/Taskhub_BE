@@ -10,7 +10,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/applications")
@@ -31,18 +30,18 @@ public class ApplicationController {
     }
 
     @PostMapping("/task/{taskId}")
-    public ResponseEntity<ApiResponse<ApplicationResponse>> apply(@PathVariable UUID taskId, @RequestBody ApplicationRequest req) {
+    public ResponseEntity<ApiResponse<ApplicationResponse>> apply(@PathVariable Long taskId, @RequestBody ApplicationRequest req) {
         return ResponseEntity.ok(ApiResponse.ok("Applied successfully", applicationService.apply(taskId, req)));
     }
 
     @PostMapping("/{id}/accept")
-    public ResponseEntity<ApiResponse<Void>> accept(@PathVariable UUID id) {
+    public ResponseEntity<ApiResponse<Void>> accept(@PathVariable Long id) {
         applicationService.acceptApplication(id);
         return ResponseEntity.ok(ApiResponse.ok("Application accepted", null));
     }
 
     @GetMapping("/task/{taskId}")
-    public ResponseEntity<ApiResponse<List<ApplicationResponse>>> taskApps(@PathVariable UUID taskId) {
+    public ResponseEntity<ApiResponse<List<ApplicationResponse>>> taskApps(@PathVariable Long taskId) {
         return ResponseEntity.ok(ApiResponse.ok(applicationService.getTaskApplications(taskId)));
     }
 

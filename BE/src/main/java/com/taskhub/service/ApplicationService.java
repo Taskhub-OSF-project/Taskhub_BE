@@ -11,7 +11,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -21,7 +20,7 @@ public class ApplicationService {
     private final TaskService taskService;
 
     @Transactional
-    public ApplicationResponse apply(UUID taskId, ApplicationRequest req) {
+    public ApplicationResponse apply(Long taskId, ApplicationRequest req) {
         User student = AuthUtil.getCurrentUser();
         if (student.getRole() != Role.STUDENT)
             throw TaskHubException.forbidden("Only students can apply");
@@ -38,7 +37,7 @@ public class ApplicationService {
     }
 
     @Transactional
-    public void acceptApplication(UUID applicationId) {
+    public void acceptApplication(Long applicationId) {
         User hirer = AuthUtil.getCurrentUser();
         TaskApplication app = appRepo.findById(applicationId)
                 .orElseThrow(() -> TaskHubException.notFound("Application not found"));
@@ -62,7 +61,7 @@ public class ApplicationService {
                 .forEach(a -> { a.setStatus(ApplicationStatus.REJECTED); appRepo.save(a); });
     }
 
-    public List<ApplicationResponse> getTaskApplications(UUID taskId) {
+    public List<ApplicationResponse> getTaskApplications(Long taskId) {
         return appRepo.findByTaskId(taskId).stream().map(this::toResponse).toList();
     }
 

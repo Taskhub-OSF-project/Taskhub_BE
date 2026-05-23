@@ -4,15 +4,13 @@ import com.taskhub.enums.ApplicationStatus;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.LocalDateTime;
-import java.util.UUID;
-
 @Entity
 @Table(name = "task_applications", uniqueConstraints = @UniqueConstraint(columnNames = {"task_id", "student_id"}))
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class TaskApplication {
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "task_id", nullable = false)

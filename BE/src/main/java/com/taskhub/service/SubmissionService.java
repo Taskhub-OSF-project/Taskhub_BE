@@ -11,7 +11,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -23,7 +22,7 @@ public class SubmissionService {
     private final EscrowService escrowService;
 
     @Transactional
-    public SubmissionResponse submit(UUID taskId, SubmissionRequest req) {
+    public SubmissionResponse submit(Long taskId, SubmissionRequest req) {
         User student = AuthUtil.getCurrentUser();
         if (student.getRole() != Role.STUDENT)
             throw TaskHubException.forbidden("Only students can submit");
@@ -60,7 +59,7 @@ public class SubmissionService {
     }
 
     @Transactional
-    public void approveSubmission(UUID taskId) {
+    public void approveSubmission(Long taskId) {
         User hirer = AuthUtil.getCurrentUser();
         Task task = taskService.findTask(taskId);
         if (!task.getHirer().getId().equals(hirer.getId()))
@@ -75,11 +74,11 @@ public class SubmissionService {
         escrowService.releaseEscrow(taskId);
     }
 
-    public List<SubmissionResponse> getTaskSubmissions(UUID taskId) {
+    public List<SubmissionResponse> getTaskSubmissions(Long taskId) {
         return submissionRepo.findByTaskId(taskId).stream().map(this::toResponse).toList();
     }
 
-    public String generateDisputeReport(UUID taskId) {
+    public String generateDisputeReport(Long taskId) {
         Task task = taskService.findTask(taskId);
         List<Submission> subs = submissionRepo.findByTaskId(taskId);
         if (subs.isEmpty()) throw TaskHubException.badRequest("No submissions found");

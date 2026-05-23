@@ -22,6 +22,8 @@ Mặc định project dùng **H2 in-memory**, không cần cài SQL Server.
    - User: `sa`  
    - Password: *(để trống)*
 
+**Lưu ý ID:** Mọi bảng dùng `id` kiểu **BIGINT** tự tăng `1, 2, 3...`. H2 in-memory tạo lại schema mỗi lần restart app (profile `dev`).
+
 **IntelliJ:** Run Configuration → Active profiles: `dev` (hoặc để trống — mặc định đã là `dev`).
 
 ---

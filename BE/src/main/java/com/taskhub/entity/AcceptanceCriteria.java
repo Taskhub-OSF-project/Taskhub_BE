@@ -3,15 +3,13 @@ package com.taskhub.entity;
 import com.taskhub.enums.CriteriaStatus;
 import jakarta.persistence.*;
 import lombok.*;
-import java.util.UUID;
-
 @Entity
 @Table(name = "acceptance_criteria")
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class AcceptanceCriteria {
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
     @Column(columnDefinition = "TEXT", nullable = false)
     private String description;

@@ -14,7 +14,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -45,7 +44,7 @@ public class TaskService {
         return toResponse(taskRepository.save(task));
     }
 
-    public TaskResponse getTask(UUID id) {
+    public TaskResponse getTask(Long id) {
         return toResponse(findTask(id));
     }
 
@@ -64,7 +63,7 @@ public class TaskService {
 
     // SINGLE lockTask method - enhanced version only
     @Transactional
-    public TaskResponse lockTask(UUID taskId) {
+    public TaskResponse lockTask(Long taskId) {
         Task task = findOwnedTask(taskId);
         validateTransition(task, TaskStatus.LOCKED);
 
@@ -84,21 +83,21 @@ public class TaskService {
     }
 
     @Transactional
-    public TaskResponse transitionTask(UUID taskId, TaskStatus newStatus) {
+    public TaskResponse transitionTask(Long taskId, TaskStatus newStatus) {
         Task task = findTask(taskId);
         transition(task, newStatus);
         return toResponse(taskRepository.save(task));
     }
 
     @Transactional
-    public TaskResponse publishTask(UUID taskId) {
+    public TaskResponse publishTask(Long taskId) {
         Task task = findOwnedTask(taskId);
         transition(task, TaskStatus.ACTIVE);
         return toResponse(taskRepository.save(task));
     }
 
     @Transactional
-    public TaskResponse requestRevision(UUID taskId, RevisionRequest req) {
+    public TaskResponse requestRevision(Long taskId, RevisionRequest req) {
         Task task = findOwnedTask(taskId);
         if (task.getStatus() != TaskStatus.SUBMITTED && task.getStatus() != TaskStatus.DISPUTED)
             throw TaskHubException.badRequest("Can only request revision on submitted or disputed tasks");
@@ -113,7 +112,7 @@ public class TaskService {
     }
 
     @Transactional
-    public TaskResponse disputeTask(UUID taskId) {
+    public TaskResponse disputeTask(Long taskId) {
         Task task = findTask(taskId);
         transition(task, TaskStatus.DISPUTED);
         return toResponse(taskRepository.save(task));
@@ -121,12 +120,12 @@ public class TaskService {
 
     // ===== Public helpers =====
 
-    public Task findTask(UUID id) {
+    public Task findTask(Long id) {
         return taskRepository.findById(id)
                 .orElseThrow(() -> TaskHubException.notFound("Task not found"));
     }
 
-    public Task findOwnedTask(UUID id) {
+    public Task findOwnedTask(Long id) {
         Task task = findTask(id);
         if (!task.getHirer().getId().equals(AuthUtil.getCurrentUser().getId()))
             throw TaskHubException.forbidden("Not your task");

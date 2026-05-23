@@ -19,7 +19,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.taskhub.util.EscrowCalculator;
 import java.math.BigDecimal;
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -32,7 +31,7 @@ public class EscrowService {
     private final WalletService walletService;
 
     @Transactional
-    public void fundEscrow(UUID taskId) {
+    public void fundEscrow(Long taskId) {
         User hirer = AuthUtil.getCurrentUser();
         if (hirer.getRole() != Role.HIRER)
             throw TaskHubException.forbidden("Only hirers can fund escrow");
@@ -68,7 +67,7 @@ public class EscrowService {
     }
 
     @Transactional
-    public void releaseEscrow(UUID taskId) {
+    public void releaseEscrow(Long taskId) {
         Task task = taskService.findTask(taskId);
         if (task.getStatus() != TaskStatus.COMPLETED)
             throw TaskHubException.badRequest("Task must be COMPLETED to release escrow");
@@ -91,7 +90,7 @@ public class EscrowService {
     }
 
     @Transactional
-    public void refundEscrow(UUID taskId) {
+    public void refundEscrow(Long taskId) {
         User hirer = AuthUtil.getCurrentUser();
         if (hirer.getRole() != Role.HIRER)
             throw TaskHubException.forbidden("Only hirers can refund escrow");

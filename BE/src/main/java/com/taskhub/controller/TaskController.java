@@ -15,7 +15,6 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
-import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/tasks")
@@ -31,7 +30,7 @@ public class TaskController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<ApiResponse<TaskResponse>> get(@PathVariable UUID id) {
+    public ResponseEntity<ApiResponse<TaskResponse>> get(@PathVariable Long id) {
         return ResponseEntity.ok(ApiResponse.ok(taskService.getTask(id)));
     }
 
@@ -54,7 +53,7 @@ public class TaskController {
     }
 
     @PostMapping("/{id}/validate")
-    public ResponseEntity<ApiResponse<AiValidationService.ValidationResult>> validateCriteria(@PathVariable UUID id) {
+    public ResponseEntity<ApiResponse<AiValidationService.ValidationResult>> validateCriteria(@PathVariable Long id) {
         var task = taskService.findOwnedTask(id);
         List<String> criteria = task.getAcceptanceCriteria().stream()
                 .map(AcceptanceCriteria::getDescription).toList();
@@ -71,7 +70,7 @@ public class TaskController {
     }
 
     @PostMapping("/{id}/lock")
-    public ResponseEntity<ApiResponse<ValidationPhaseResponse>> lockWithValidation(@PathVariable UUID id) {
+    public ResponseEntity<ApiResponse<ValidationPhaseResponse>> lockWithValidation(@PathVariable Long id) {
         var task = taskService.findOwnedTask(id);
         List<String> criteria = task.getAcceptanceCriteria().stream()
                 .map(AcceptanceCriteria::getDescription).toList();
@@ -101,24 +100,24 @@ public class TaskController {
     }
 
     @PostMapping("/{id}/complete")
-    public ResponseEntity<ApiResponse<TaskResponse>> complete(@PathVariable UUID id) {
+    public ResponseEntity<ApiResponse<TaskResponse>> complete(@PathVariable Long id) {
         return ResponseEntity.ok(ApiResponse.ok("Task completed",
                 taskService.transitionTask(id, TaskStatus.COMPLETED)));
     }
 
     @PostMapping("/{id}/publish")
-    public ResponseEntity<ApiResponse<TaskResponse>> publish(@PathVariable UUID id) {
+    public ResponseEntity<ApiResponse<TaskResponse>> publish(@PathVariable Long id) {
         return ResponseEntity.ok(ApiResponse.ok("Task published", taskService.publishTask(id)));
     }
 
     @PostMapping("/{id}/revision")
     public ResponseEntity<ApiResponse<TaskResponse>> revision(
-            @PathVariable UUID id, @Valid @RequestBody RevisionRequest req) {
+            @PathVariable Long id, @Valid @RequestBody RevisionRequest req) {
         return ResponseEntity.ok(ApiResponse.ok("Revision requested", taskService.requestRevision(id, req)));
     }
 
     @PostMapping("/{id}/dispute")
-    public ResponseEntity<ApiResponse<TaskResponse>> dispute(@PathVariable UUID id) {
+    public ResponseEntity<ApiResponse<TaskResponse>> dispute(@PathVariable Long id) {
         return ResponseEntity.ok(ApiResponse.ok("Task disputed", taskService.disputeTask(id)));
     }
 
