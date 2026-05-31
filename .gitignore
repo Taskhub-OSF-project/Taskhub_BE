@@ -2,3 +2,17 @@ node_modules/
 .env
 dist/
 build/
+# Maven build output
+target/
+**/target/
+
+# Gradle build output
+build/
+.gradle/
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
