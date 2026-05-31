@@ -15,6 +15,10 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.util.List;
 
+/**
+ * Filter đọc JWT từ header và set Authentication cho request.
+ * Thuộc module Security, chạy trước các controller protected.
+ */
 @Component
 @RequiredArgsConstructor
 public class JwtAuthFilter extends OncePerRequestFilter {
@@ -57,6 +61,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             if (jwtService.validateToken(token)) {
                 Long userId = jwtService.getUserIdFromToken(token);
                 userRepository.findById(userId).ifPresent(user -> {
+                    // Build Authentication từ user và role để downstream dùng.
                     var auth = new UsernamePasswordAuthenticationToken(
                             user,
                             null,

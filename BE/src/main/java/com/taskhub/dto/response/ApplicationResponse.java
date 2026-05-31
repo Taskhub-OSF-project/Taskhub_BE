@@ -10,6 +10,8 @@ public class ApplicationResponse {
     private Long taskId;
     private Long studentId;
     private String studentName;
+    private String studentUniversity;
+    private String studentMajor;
     private String coverLetter;
     private ApplicationStatus status;
     private LocalDateTime appliedAt;

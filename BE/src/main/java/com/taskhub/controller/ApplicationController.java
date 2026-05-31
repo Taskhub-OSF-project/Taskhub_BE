@@ -24,29 +24,38 @@ public class ApplicationController {
         log.info("Swagger UI: http://localhost:8080/swagger-ui.html");
     }
 
-    @GetMapping("/")
-    public String home() {
-        return "redirect:/swagger-ui.html";
+    /**
+     * Trang redirect nhanh sang Swagger (phục vụ dev).
+     */
     }
 
-    @PostMapping("/task/{taskId}")
-    public ResponseEntity<ApiResponse<ApplicationResponse>> apply(@PathVariable Long taskId, @RequestBody ApplicationRequest req) {
+    /**
+     * Student apply vào một task đang ACTIVE.
+     * Input: ApplicationRequest (coverLetter tùy chọn).
+     * Output: ApplicationResponse.
+     */
         return ResponseEntity.ok(ApiResponse.ok("Applied successfully", applicationService.apply(taskId, req)));
     }
 
+    /**
+     * Hirer chấp nhận một đơn ứng tuyển.
+     * Business rule: task chuyển IN_PROGRESS, các đơn khác bị REJECTED.
+     */
     @PostMapping("/{id}/accept")
     public ResponseEntity<ApiResponse<Void>> accept(@PathVariable Long id) {
         applicationService.acceptApplication(id);
-        return ResponseEntity.ok(ApiResponse.ok("Application accepted", null));
-    }
-
-    @GetMapping("/task/{taskId}")
     public ResponseEntity<ApiResponse<List<ApplicationResponse>>> taskApps(@PathVariable Long taskId) {
         return ResponseEntity.ok(ApiResponse.ok(applicationService.getTaskApplications(taskId)));
     }
 
+    /**
+     * Danh sách đơn ứng tuyển của student hiện tại.
+     */
     @GetMapping("/mine")
     public ResponseEntity<ApiResponse<List<ApplicationResponse>>> myApps() {
-        return ResponseEntity.ok(ApiResponse.ok(applicationService.getMyApplications()));
+     */
+    @GetMapping("/my-applied-tasks")
+    public ResponseEntity<ApiResponse<List<TaskResponse>>> myAppliedTasks() {
+        return ResponseEntity.ok(ApiResponse.ok(applicationService.getMyAppliedTasks()));
     }
 }

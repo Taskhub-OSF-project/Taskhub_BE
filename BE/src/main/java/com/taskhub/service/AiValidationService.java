@@ -9,6 +9,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
+/**
+ * Service kiểm tra chất lượng criteria bằng heuristic (không phải LLM thật).
+ * Thuộc module AI, được gọi từ TaskService/SubmissionService.
+ */
 @Service
 public class AiValidationService {
 
@@ -34,6 +38,10 @@ public class AiValidationService {
             Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE
     );
 
+    /**
+     * Validate danh sách criteria và trả chi tiết từng mục.
+     * Output: ValidationResult (valid + details).
+     */
     public ValidationResult validateCriteriaEnhanced(List<String> criteria) {
         if (criteria == null || criteria.isEmpty()) {
             return new ValidationResult(false, "At least one acceptance criterion is required", List.of());
@@ -137,6 +145,7 @@ public class AiValidationService {
     }
 
     private String normalize(String input) {
+        // Chuẩn hóa để so khớp từ khóa không dấu.
         String n = Normalizer.normalize(input, Normalizer.Form.NFD)
                 .replaceAll("\\p{M}", "")
                 .toLowerCase(Locale.ROOT);
@@ -157,6 +166,9 @@ public class AiValidationService {
         return criteria + " — e.g. 3 file PDF, moi file toi thieu 5 trang, font Arial 12pt";
     }
 
+    /**
+     * Chấm điểm submission dựa trên mức độ khớp keyword với criteria.
+     */
     public int scoreSubmission(String submissionNotes, List<String> criteria) {
         if (criteria.isEmpty()) return 0;
         int matched = 0;
@@ -169,6 +181,9 @@ public class AiValidationService {
         return (int) ((matched * 100.0) / criteria.size());
     }
 
+    /**
+     * Sinh báo cáo tranh chấp dạng text để tham khảo nhanh.
+     */
     public String generateDisputeReport(String submissionNotes, List<String> criteria) {
         StringBuilder sb = new StringBuilder("=== DISPUTE REPORT ===\n\n");
         String lower = submissionNotes != null ? submissionNotes.toLowerCase() : "";

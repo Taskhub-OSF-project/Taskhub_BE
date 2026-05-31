@@ -20,6 +20,10 @@ import org.springframework.transaction.annotation.Transactional;
 import com.taskhub.util.EscrowCalculator;
 import java.math.BigDecimal;
 
+/**
+ * Service xử lý nghiệp vụ escrow (fund/release/refund).
+ * Thuộc module Escrow, được gọi từ EscrowController và SubmissionService.
+ */
 @Service
 @RequiredArgsConstructor
 public class EscrowService {
@@ -30,9 +34,14 @@ public class EscrowService {
     private final TaskService taskService;
     private final WalletService walletService;
 
+    /**
+     * Nạp escrow cho task (HIRER owner).
+     * Rule: task phải cho phép transition -> ESCROW_FUNDED, ví đủ budget + fee.
+     */
     @Transactional
     public void fundEscrow(Long taskId) {
         User hirer = AuthUtil.getCurrentUser();
+        // Chỉ HIRER được fund escrow.
         if (hirer.getRole() != Role.HIRER)
             throw TaskHubException.forbidden("Only hirers can fund escrow");
 
@@ -49,6 +58,7 @@ public class EscrowService {
                     walletService.assessCreateTaskReadiness(task.getBudget()));
         }
 
+        // Trừ tiền ví và ghi ledger escrow_deduction.
         hirer.setWalletBalance(hirer.getWalletBalance().subtract(totalDeduction));
         userRepository.save(hirer);
         walletService.recordTransaction(hirer, WalletTransactionType.escrow_deduction, totalDeduction.negate(), task);
@@ -66,6 +76,9 @@ public class EscrowService {
         taskRepository.save(task);
     }
 
+    /**
+     * Release escrow sang ví student khi task COMPLETED.
+     */
     @Transactional
     public void releaseEscrow(Long taskId) {
         Task task = taskService.findTask(taskId);
@@ -81,6 +94,7 @@ public class EscrowService {
         if (student == null)
             throw TaskHubException.badRequest("Task has no assigned student");
 
+        // Cộng tiền cho student và ghi ledger escrow_release.
         student.setWalletBalance(student.getWalletBalance().add(escrow.getAmount()));
         userRepository.save(student);
         walletService.recordTransaction(student, WalletTransactionType.escrow_release, escrow.getAmount(), task);
@@ -89,6 +103,10 @@ public class EscrowService {
         escrowRepository.save(escrow);
     }
 
+    /**
+     * Refund escrow về ví hirer khi dispute.
+     * Rule: task cho phép transition về LOCKED.
+     */
     @Transactional
     public void refundEscrow(Long taskId) {
         User hirer = AuthUtil.getCurrentUser();
@@ -105,6 +123,7 @@ public class EscrowService {
         if (escrow.getStatus() != EscrowStatus.FUNDED)
             throw TaskHubException.badRequest("Escrow not in FUNDED state");
 
+        // Trả lại tiền cho hirer và ghi ledger refund.
         hirer.setWalletBalance(hirer.getWalletBalance().add(escrow.getAmount()));
         userRepository.save(hirer);
         walletService.recordTransaction(hirer, WalletTransactionType.refund, escrow.getAmount(), task);
@@ -112,6 +131,7 @@ public class EscrowService {
         escrow.setStatus(EscrowStatus.REFUNDED);
         escrowRepository.save(escrow);
 
+        // Reset assignee và criteria khi hoàn tiền.
         task.setAssignedTo(null);
         task.getAcceptanceCriteria().forEach(c -> c.setStatus(CriteriaStatus.PENDING));
         taskService.transition(task, TaskStatus.LOCKED);

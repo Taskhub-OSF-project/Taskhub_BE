@@ -21,6 +21,9 @@ public class Task {
     @Column(columnDefinition = "TEXT", nullable = false)
     private String description;
 
+    @Column(length = 100)
+    private String category;
+
     @Column(precision = 12, scale = 2, nullable = false)
     private BigDecimal budget;
 

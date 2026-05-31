@@ -18,6 +18,10 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import java.util.List;
 
+/**
+ * Cấu hình Spring Security cho toàn bộ hệ thống.
+ * Thuộc module Security, thiết lập JWT, CORS và quyền truy cập.
+ */
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
@@ -25,6 +29,9 @@ import java.util.List;
 public class SecurityConfig {
     private final JwtAuthFilter jwtAuthFilter;
 
+    /**
+     * Khai báo filter chain dùng JWT và chặn session stateful.
+     */
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         return http
@@ -44,6 +51,7 @@ public class SecurityConfig {
                                 "/api/auth/**"
                         ).permitAll()
                         .anyRequest().authenticated())
+                // JWT filter chạy trước filter đăng nhập mặc định.
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();
     }

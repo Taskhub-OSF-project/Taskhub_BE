@@ -10,6 +10,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+/**
+ * Service xử lý nghiệp vụ đăng ký/đăng nhập.
+ * Thuộc module Auth, được gọi từ AuthController.
+ */
 @Service
 @RequiredArgsConstructor
 public class AuthService {
@@ -17,6 +21,11 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
 
+    /**
+     * Đăng ký tài khoản và trả JWT.
+     * Input: RegisterRequest.
+     * Output: AuthResponse.
+     */
     public AuthResponse register(RegisterRequest req) {
         if (userRepository.existsByEmail(req.getEmail()))
             throw TaskHubException.badRequest("Email already registered");
@@ -25,6 +34,8 @@ public class AuthService {
                 .email(req.getEmail())
                 .password(passwordEncoder.encode(req.getPassword()))
                 .fullName(req.getFullName())
+                .university(trimToNull(req.getUniversity()))
+                .major(trimToNull(req.getMajor()))
                 .role(req.getRole())
                 .build();
         userRepository.save(user);
@@ -35,6 +46,11 @@ public class AuthService {
                 .fullName(user.getFullName()).role(user.getRole()).build();
     }
 
+    /**
+     * Đăng nhập và trả JWT nếu thông tin hợp lệ.
+     * Input: LoginRequest.
+     * Output: AuthResponse.
+     */
     public AuthResponse login(LoginRequest req) {
         User user = userRepository.findByEmail(req.getEmail())
                 .orElseThrow(() -> TaskHubException.badRequest("Invalid credentials"));
@@ -45,5 +61,11 @@ public class AuthService {
         return AuthResponse.builder()
                 .token(token).userId(user.getId()).email(user.getEmail())
                 .fullName(user.getFullName()).role(user.getRole()).build();
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

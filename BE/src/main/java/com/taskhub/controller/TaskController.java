@@ -35,8 +35,8 @@ public class TaskController {
     }
 
     @GetMapping("/mine")
-    public ResponseEntity<ApiResponse<List<TaskResponse>>> myTasks() {
-        return ResponseEntity.ok(ApiResponse.ok(taskService.getMyTasks()));
+    public ResponseEntity<ApiResponse<List<TaskResponse>>> myTasks(@RequestParam(required = false) String status) {
+        return ResponseEntity.ok(ApiResponse.ok(taskService.getMyTasks(status)));
     }
 
     @GetMapping("/available")
@@ -119,6 +119,18 @@ public class TaskController {
     @PostMapping("/{id}/dispute")
     public ResponseEntity<ApiResponse<TaskResponse>> dispute(@PathVariable Long id) {
         return ResponseEntity.ok(ApiResponse.ok("Task disputed", taskService.disputeTask(id)));
+    }
+
+    @PatchMapping("/{id}")
+    public ResponseEntity<ApiResponse<TaskResponse>> patch(
+            @PathVariable Long id, @Valid @RequestBody PatchTaskRequest req) {
+        return ResponseEntity.ok(ApiResponse.ok("Task updated", taskService.updateTask(id, req)));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<ApiResponse<Void>> delete(@PathVariable Long id) {
+        taskService.deleteTask(id);
+        return ResponseEntity.ok(ApiResponse.ok("Task deleted", null));
     }
 
     private List<AiValidationService.CriteriaSuggestion> toSuggestions(

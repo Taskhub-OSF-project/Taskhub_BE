@@ -8,6 +8,10 @@ import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
 
+/**
+ * Service tạo và kiểm tra JWT.
+ * Thuộc module Security, được gọi từ AuthService và JwtAuthFilter.
+ */
 @Service
 public class JwtService {
     @Value("${app.jwt.secret}")
@@ -20,6 +24,9 @@ public class JwtService {
         return Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
     }
 
+    /**
+     * Tạo JWT từ userId/email/role.
+     */
     public String generateToken(Long userId, String email, String role) {
         return Jwts.builder()
                 .subject(userId.toString())
@@ -31,10 +38,16 @@ public class JwtService {
                 .compact();
     }
 
+    /**
+     * Lấy userId từ JWT.
+     */
     public Long getUserIdFromToken(String token) {
         return Long.parseLong(getClaims(token).getSubject());
     }
 
+    /**
+     * Kiểm tra token có hợp lệ và chưa hết hạn hay không.
+     */
     public boolean validateToken(String token) {
         try { getClaims(token); return true; }
         catch (JwtException | IllegalArgumentException e) { return false; }

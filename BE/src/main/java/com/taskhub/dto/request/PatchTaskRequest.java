@@ -7,19 +7,21 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 @Data @Builder @NoArgsConstructor @AllArgsConstructor
-public class CreateTaskRequest {
-    @NotBlank
+public class PatchTaskRequest {
+    @Size(max = 255)
     private String title;
-    @NotBlank
+
     private String description;
+
+    @DecimalMin("1.0")
+    private BigDecimal budget;
+
+    @Future
+    private LocalDateTime deadline;
 
     @Size(max = 100)
     private String category;
 
-    @NotNull @DecimalMin("1.0")
-    private BigDecimal budget;
-    @NotNull @Future
-    private LocalDateTime deadline;
-    @NotEmpty
     private List<@NotBlank String> acceptanceCriteria;
 }
+

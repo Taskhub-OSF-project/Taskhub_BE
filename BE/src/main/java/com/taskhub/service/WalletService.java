@@ -18,18 +18,25 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.List;
 
+/**
+ * Service xử lý ví và lịch sử giao dịch.
+ * Thuộc module Wallet, được gọi từ WalletController và các service khác.
+ */
 @Service
 @RequiredArgsConstructor
 public class WalletService {
     private final UserRepository userRepository;
     private final WalletTransactionRepository walletTransactionRepository;
 
+    /**
+     * Lấy số dư ví của user hiện tại.
+     */
     public WalletResponse getBalance() {
         return new WalletResponse(AuthUtil.getCurrentUser().getWalletBalance());
     }
 
     /**
-     * Check if hirer wallet can cover escrow (budget + 5% platform fee) before creating a task.
+     * Kiểm tra ví có đủ budget + 5% fee trước khi tạo task.
      */
     public WalletReadinessResponse assessCreateTaskReadiness(BigDecimal budget) {
         if (budget == null || budget.compareTo(BigDecimal.ZERO) <= 0)
@@ -54,6 +61,9 @@ public class WalletService {
                 .build();
     }
 
+    /**
+     * Bắt lỗi sớm nếu ví không đủ để tạo task.
+     */
     public void requireSufficientForCreateTask(BigDecimal budget) {
         WalletReadinessResponse readiness = assessCreateTaskReadiness(budget);
         if (!readiness.isSufficient()) {
@@ -64,6 +74,9 @@ public class WalletService {
         }
     }
 
+    /**
+     * Lịch sử giao dịch của user hiện tại (mới nhất trước).
+     */
     public List<WalletTransactionResponse> getTransactions() {
         return walletTransactionRepository.findByUserIdOrderByCreatedAtDesc(AuthUtil.getCurrentUser().getId())
                 .stream()
@@ -71,6 +84,9 @@ public class WalletService {
                 .toList();
     }
 
+    /**
+     * Nạp tiền mock vào ví (dev/demo).
+     */
     @Transactional
     public WalletResponse deposit(BigDecimal amount) {
         if (amount.compareTo(BigDecimal.ZERO) <= 0)
@@ -82,6 +98,9 @@ public class WalletService {
         return new WalletResponse(user.getWalletBalance());
     }
 
+    /**
+     * Ghi một dòng ledger cho giao dịch ví.
+     */
     public void recordTransaction(User user, WalletTransactionType type, BigDecimal amount, Task task) {
         walletTransactionRepository.save(WalletTransaction.builder()
                 .user(user)
@@ -93,6 +112,7 @@ public class WalletService {
     }
 
     private WalletTransactionResponse toResponse(WalletTransaction transaction) {
+        // Mapping entity -> DTO để trả cho client.
         return WalletTransactionResponse.builder()
                 .id(transaction.getId())
                 .type(transaction.getType())

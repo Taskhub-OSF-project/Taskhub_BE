@@ -12,6 +12,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 
+/**
+ * Service xử lý nghiệp vụ nộp bài và duyệt bài.
+ * Thuộc module Submission, được gọi từ SubmissionController.
+ */
 @Service
 @RequiredArgsConstructor
 public class SubmissionService {
@@ -21,9 +25,14 @@ public class SubmissionService {
     private final TaskService taskService;
     private final EscrowService escrowService;
 
+    /**
+     * Student nộp bài cho task đang IN_PROGRESS.
+     * Rule: chỉ assignee được nộp, chấm điểm heuristic.
+     */
     @Transactional
     public SubmissionResponse submit(Long taskId, SubmissionRequest req) {
         User student = AuthUtil.getCurrentUser();
+        // Chỉ STUDENT được submit.
         if (student.getRole() != Role.STUDENT)
             throw TaskHubException.forbidden("Only students can submit");
 
@@ -33,7 +42,7 @@ public class SubmissionService {
         if (!task.getAssignedTo().getId().equals(student.getId()))
             throw TaskHubException.forbidden("Not assigned to you");
 
-        // Only evaluate pending/failed criteria
+        // Chỉ đánh giá criteria chưa PASSED.
         List<String> criteriaToEvaluate = task.getAcceptanceCriteria().stream()
                 .filter(c -> c.getStatus() != CriteriaStatus.PASSED)
                 .map(AcceptanceCriteria::getDescription).toList();
@@ -58,6 +67,9 @@ public class SubmissionService {
         return toResponse(submission);
     }
 
+    /**
+     * Hirer duyệt bài: mark criteria PASSED, task COMPLETED, release escrow.
+     */
     @Transactional
     public void approveSubmission(Long taskId) {
         User hirer = AuthUtil.getCurrentUser();
@@ -67,17 +79,23 @@ public class SubmissionService {
         if (task.getStatus() != TaskStatus.SUBMITTED)
             throw TaskHubException.badRequest("Task is not SUBMITTED");
 
-        // Mark all criteria as passed
+        // Duyệt toàn bộ criteria và chuyển trạng thái task.
         task.getAcceptanceCriteria().forEach(c -> c.setStatus(CriteriaStatus.PASSED));
         taskService.transition(task, TaskStatus.COMPLETED);
         taskRepo.save(task);
         escrowService.releaseEscrow(taskId);
     }
 
+    /**
+     * Lấy lịch sử submission theo task.
+     */
     public List<SubmissionResponse> getTaskSubmissions(Long taskId) {
         return submissionRepo.findByTaskId(taskId).stream().map(this::toResponse).toList();
     }
 
+    /**
+     * Tạo báo cáo tranh chấp dạng text từ notes và criteria.
+     */
     public String generateDisputeReport(Long taskId) {
         Task task = taskService.findTask(taskId);
         List<Submission> subs = submissionRepo.findByTaskId(taskId);
@@ -90,6 +108,7 @@ public class SubmissionService {
     }
 
     private SubmissionResponse toResponse(Submission s) {
+        // Mapping entity -> DTO để trả về client.
         return SubmissionResponse.builder()
                 .id(s.getId()).taskId(s.getTask().getId())
                 .studentId(s.getStudent().getId()).studentName(s.getStudent().getFullName())

@@ -19,13 +19,13 @@
 
 ## Phase 2 — Task & application
 
-- [ ] Field `category` trên `Task` + DTO
-- [ ] `PATCH /api/tasks/{id}` — sửa task khi `DRAFT`
-- [ ] `DELETE /api/tasks/{id}`
-- [ ] `GET /api/tasks/mine?status=` — lọc dashboard theo state
-- [ ] Embed applicants trong `TaskResponse` hoặc document contract gọi kèm
-- [ ] `GET /api/applications/my-applied-tasks` — task student đã apply (chưa được chọn)
-- [ ] Profile student: `university`, `major` trên `User` + hiển thị khi apply/review
+- [x] Field `category` tren `Task` + DTO
+- [x] `PATCH /api/tasks/{id}` — sua task khi `DRAFT`
+- [x] `DELETE /api/tasks/{id}`
+- [x] `GET /api/tasks/mine?status=` — loc dashboard theo state
+- [x] Embed applicants trong `TaskResponse` hoac document contract goi kem
+- [x] `GET /api/applications/my-applied-tasks` — task student da apply (chua duoc chon)
+- [x] Profile student: `university`, `major` tren `User` + hien thi khi apply/review
 
 ---
 

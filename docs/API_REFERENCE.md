@@ -167,7 +167,9 @@ Base path: `/api/auth` — **Public**
   "email": "hirer@example.com",
   "password": "password123",
   "fullName": "Nguyen Van A",
-  "role": "HIRER"
+  "role": "HIRER",
+  "university": "HCMUT",
+  "major": "Computer Science"
 }
 ```
 
@@ -177,6 +179,8 @@ Base path: `/api/auth` — **Public**
 | `password` | ✓ | Tối thiểu 6 ký tự |
 | `fullName` | ✓ | |
 | `role` | ✓ | `HIRER` hoặc `STUDENT` |
+| `university` | | Optional, max 100 |
+| `major` | | Optional, max 100 |
 
 **Response `data` (AuthResponse):**
 
@@ -314,6 +318,7 @@ Tạo task — **HIRER only**.
 {
   "title": "Thiết kế poster sự kiện",
   "description": "Cần poster A3 cho buổi workshop...",
+  "category": "Design",
   "budget": 1000000,
   "deadline": "2026-06-30T23:59:00",
   "acceptanceCriteria": [
@@ -336,13 +341,14 @@ Chi tiết một task.
 | Field | Kiểu |
 |-------|------|
 | `id` | number (1, 2, 3…) |
-| `title`, `description` | string |
+| `title`, `description`, `category` | string |
 | `budget` | number |
 | `deadline` | ISO datetime |
 | `status` | TaskStatus enum |
 | `hirerId`, `hirerName` | |
 | `assignedToId`, `assignedToName` | nullable |
 | `acceptanceCriteria` | `[{ id, description, status }]` |
+| `applicants` | `ApplicationResponse[]` (hirer own tasks only) |
 | `createdAt` | ISO datetime |
 
 `status` criterion: `PENDING` | `PASSED` | `FAILED`
@@ -354,7 +360,47 @@ Chi tiết một task.
 - **HIRER:** tất cả task do mình tạo
 - **STUDENT:** task đã được assign (`assignedToId` = mình)
 
+**Query (optional):**
+
+| Param | Kiểu | Ghi chú |
+|-------|------|--------|
+| `status` | TaskStatus | Lọc theo trạng thái; bỏ trống = tất cả |
+
 **Response `data`:** `TaskResponse[]`
+
+Ghi chu: chi HIRER owner moi co field `applicants`.
+
+---
+
+### PATCH `/api/tasks/{id}`
+
+Cập nhật task khi **`DRAFT`** — **HIRER owner only**.
+
+**Body (PatchTaskRequest):**
+
+```json
+{
+  "title": "Cap nhat tieu de",
+  "description": "Cap nhat mo ta",
+  "budget": 1200000,
+  "deadline": "2026-07-15T23:59:00",
+  "category": "Design",
+  "acceptanceCriteria": [
+    "Giao file PNG 1920x1080",
+    "Logo ro 100% zoom"
+  ]
+}
+```
+
+Chỉ update các field có mặt trong body. Không đổi `status`.
+
+---
+
+### DELETE `/api/tasks/{id}`
+
+Xóa task khi **`DRAFT`** — **HIRER owner only**.
+
+Nếu task có application → trả lỗi rõ ràng, không cascade.
 
 ---
 
@@ -528,6 +574,8 @@ Student apply — task phải **`ACTIVE`**.
   "taskId": 1,
   "studentId": 1,
   "studentName": "...",
+  "studentUniversity": "...",
+  "studentMajor": "...",
   "coverLetter": "...",
   "status": "PENDING",
   "appliedAt": "..."
@@ -553,6 +601,14 @@ Danh sách đơn ứng tuyển của một task.
 ### GET `/api/applications/mine`
 
 Đơn apply của student đang đăng nhập.
+
+---
+
+### GET `/api/applications/my-applied-tasks`
+
+Danh sách task student đã apply nhưng chưa được chọn (`PENDING`).
+
+**Response `data`:** `TaskResponse[]`
 
 ---
 

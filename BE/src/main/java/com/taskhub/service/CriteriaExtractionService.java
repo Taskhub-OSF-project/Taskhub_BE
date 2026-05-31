@@ -10,11 +10,18 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+/**
+ * Service gợi ý criteria từ file brief (heuristic theo loại file).
+ * Thuộc module AI, được gọi từ TaskController.
+ */
 @Service
 public class CriteriaExtractionService {
 
     private static final long MAX_BYTES = 15 * 1024 * 1024;
 
+    /**
+     * Trả về danh sách criteria gợi ý dựa trên tên file và content-type.
+     */
     public CriteriaExtractResponse extractFromFile(MultipartFile file) {
         if (file == null || file.isEmpty())
             throw TaskHubException.badRequest("File is required");

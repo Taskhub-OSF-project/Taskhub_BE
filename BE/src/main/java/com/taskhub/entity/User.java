@@ -22,6 +22,12 @@ public class User {
     @Column(nullable = false)
     private String fullName;
 
+    @Column(length = 100)
+    private String university;
+
+    @Column(length = 100)
+    private String major;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Role role;

@@ -52,6 +52,18 @@ SPRING_DATASOURCE_URL=jdbc:sqlserver://localhost:1433;databaseName=TaskhubData;e
 
 ---
 
+## Phase 2 schema update (manual SQL)
+
+Run once if you are not using Flyway/Liquibase:
+
+```sql
+ALTER TABLE tasks ADD category NVARCHAR(100) NULL;
+ALTER TABLE [users] ADD university NVARCHAR(100) NULL;
+ALTER TABLE [users] ADD major NVARCHAR(100) NULL;
+```
+
+---
+
 ## Tóm tắt
 
 | Profile      | Database   | Khi nào dùng        |

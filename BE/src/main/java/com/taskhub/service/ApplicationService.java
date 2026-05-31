@@ -2,6 +2,7 @@ package com.taskhub.service;
 
 import com.taskhub.dto.request.ApplicationRequest;
 import com.taskhub.dto.response.ApplicationResponse;
+import com.taskhub.dto.response.TaskResponse;
 import com.taskhub.entity.*;
 import com.taskhub.enums.*;
 import com.taskhub.exception.TaskHubException;
@@ -11,7 +12,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
-
+/**
+ * Service xử lý nghiệp vụ ứng tuyển task.
+ * Thuộc module Application, được gọi từ ApplicationController.
+ */
 @Service
 @RequiredArgsConstructor
 public class ApplicationService {
@@ -19,9 +23,15 @@ public class ApplicationService {
     private final TaskRepository taskRepo;
     private final TaskService taskService;
 
+    /**
+     * Student apply vào một task đang ACTIVE.
+     * Input: taskId và ApplicationRequest.
+     * Output: ApplicationResponse vừa tạo.
+     */
     @Transactional
     public ApplicationResponse apply(Long taskId, ApplicationRequest req) {
         User student = AuthUtil.getCurrentUser();
+        // Chỉ STUDENT được apply.
         if (student.getRole() != Role.STUDENT)
             throw TaskHubException.forbidden("Only students can apply");
 
@@ -36,6 +46,10 @@ public class ApplicationService {
         return toResponse(appRepo.save(app));
     }
 
+    /**
+     * Hirer chấp nhận một application.
+     * Rule: task -> IN_PROGRESS, assign student, các đơn khác REJECTED.
+     */
     @Transactional
     public void acceptApplication(Long applicationId) {
         User hirer = AuthUtil.getCurrentUser();
@@ -43,6 +57,7 @@ public class ApplicationService {
                 .orElseThrow(() -> TaskHubException.notFound("Application not found"));
         Task task = app.getTask();
 
+        // Chỉ hirer owner được chấp nhận.
         if (!task.getHirer().getId().equals(hirer.getId()))
             throw TaskHubException.forbidden("Not your task");
         if (task.getStatus() != TaskStatus.ACTIVE)
@@ -55,25 +70,48 @@ public class ApplicationService {
         taskService.transition(task, TaskStatus.IN_PROGRESS);
         taskRepo.save(task);
 
-        // Reject other applications
+        // Từ chối các đơn còn lại để tránh nhiều assignee.
         appRepo.findByTaskId(task.getId()).stream()
                 .filter(a -> !a.getId().equals(applicationId))
                 .forEach(a -> { a.setStatus(ApplicationStatus.REJECTED); appRepo.save(a); });
     }
 
+    /**
+     * Danh sách application của một task.
+     */
     public List<ApplicationResponse> getTaskApplications(Long taskId) {
         return appRepo.findByTaskId(taskId).stream().map(this::toResponse).toList();
     }
 
+    /**
+     * Danh sách application của student hiện tại.
+     */
     public List<ApplicationResponse> getMyApplications() {
         return appRepo.findByStudentId(AuthUtil.getCurrentUser().getId())
                 .stream().map(this::toResponse).toList();
     }
 
+    /**
+     * Danh sách task đã apply nhưng chưa được chọn (PENDING).
+     */
+    public List<TaskResponse> getMyAppliedTasks() {
+        User student = AuthUtil.getCurrentUser();
+        if (student.getRole() != Role.STUDENT)
+            throw TaskHubException.forbidden("Only students can view applied tasks");
+
+        return appRepo.findByStudentIdAndStatus(student.getId(), ApplicationStatus.PENDING)
+                .stream().map(TaskApplication::getTask)
+                .map(taskService::toResponse)
+                .toList();
+    }
+
     private ApplicationResponse toResponse(TaskApplication a) {
+        // Mapping entity -> DTO, không expose User entity trực tiếp.
         return ApplicationResponse.builder()
                 .id(a.getId()).taskId(a.getTask().getId())
                 .studentId(a.getStudent().getId()).studentName(a.getStudent().getFullName())
+                .studentUniversity(a.getStudent().getUniversity())
+                .studentMajor(a.getStudent().getMajor())
                 .coverLetter(a.getCoverLetter()).status(a.getStatus()).appliedAt(a.getAppliedAt()).build();
     }
 }

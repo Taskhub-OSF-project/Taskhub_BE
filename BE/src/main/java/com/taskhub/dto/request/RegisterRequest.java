@@ -12,6 +12,13 @@ public class RegisterRequest {
     private String password;
     @NotBlank
     private String fullName;
+
+    @Size(max = 100)
+    private String university;
+
+    @Size(max = 100)
+    private String major;
+
     @NotNull
     private Role role;
 }
