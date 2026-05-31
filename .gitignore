@@ -16,3 +16,11 @@ build/
 *.iws
 *.ipr
 out/
+# Env / secrets
+.env
+*.env
+application-local.yml
+application-local.properties
+
+# Logs
+*.log
