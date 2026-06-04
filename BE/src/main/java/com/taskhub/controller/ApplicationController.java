@@ -1,13 +1,20 @@
 package com.taskhub.controller;
 
 import com.taskhub.dto.request.ApplicationRequest;
-import com.taskhub.dto.response.*;
+import com.taskhub.dto.response.ApiResponse;
+import com.taskhub.dto.response.ApplicationResponse;
+import com.taskhub.dto.response.TaskResponse;
 import com.taskhub.service.ApplicationService;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
@@ -17,43 +24,43 @@ import java.util.List;
 @Slf4j
 public class ApplicationController {
     private final ApplicationService applicationService;
-    // Remove unused TaskService and AiValidationService
 
     @PostConstruct
     public void printSwaggerUrl() {
         log.info("Swagger UI: http://localhost:8080/swagger-ui.html");
     }
 
-    /**
-     * Trang redirect nhanh sang Swagger (phục vụ dev).
-     */
+    @GetMapping("/")
+    public String home() {
+        return "redirect:/swagger-ui.html";
     }
 
-    /**
-     * Student apply vào một task đang ACTIVE.
-     * Input: ApplicationRequest (coverLetter tùy chọn).
-     * Output: ApplicationResponse.
-     */
-        return ResponseEntity.ok(ApiResponse.ok("Applied successfully", applicationService.apply(taskId, req)));
+    @PostMapping("/task/{taskId}")
+    public ResponseEntity<ApiResponse<ApplicationResponse>> apply(
+            @PathVariable Long taskId,
+            @RequestBody ApplicationRequest req
+    ) {
+        return ResponseEntity.ok(
+                ApiResponse.ok("Applied successfully", applicationService.apply(taskId, req))
+        );
     }
 
-    /**
-     * Hirer chấp nhận một đơn ứng tuyển.
-     * Business rule: task chuyển IN_PROGRESS, các đơn khác bị REJECTED.
-     */
     @PostMapping("/{id}/accept")
     public ResponseEntity<ApiResponse<Void>> accept(@PathVariable Long id) {
         applicationService.acceptApplication(id);
+        return ResponseEntity.ok(ApiResponse.ok("Application accepted", null));
+    }
+
+    @GetMapping("/task/{taskId}")
     public ResponseEntity<ApiResponse<List<ApplicationResponse>>> taskApps(@PathVariable Long taskId) {
         return ResponseEntity.ok(ApiResponse.ok(applicationService.getTaskApplications(taskId)));
     }
 
-    /**
-     * Danh sách đơn ứng tuyển của student hiện tại.
-     */
     @GetMapping("/mine")
     public ResponseEntity<ApiResponse<List<ApplicationResponse>>> myApps() {
-     */
+        return ResponseEntity.ok(ApiResponse.ok(applicationService.getMyApplications()));
+    }
+
     @GetMapping("/my-applied-tasks")
     public ResponseEntity<ApiResponse<List<TaskResponse>>> myAppliedTasks() {
         return ResponseEntity.ok(ApiResponse.ok(applicationService.getMyAppliedTasks()));
