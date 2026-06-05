@@ -1,4 +1,4 @@
-# TaskHub Backend — Việc cần làm
+﻿# TaskHub Backend — Việc cần làm
 
 > Checklist đối chiếu BE với MVP FE. Đánh dấu `[x]` khi xong.
 
@@ -31,19 +31,19 @@
 
 ## Phase 3 — Submission & revision
 
-- [ ] `POST /api/files/upload` — multipart, trả URL
-- [ ] Nhiều file mỗi lần nộp (`submittedFiles[]`)
-- [ ] Model `SubmissionAIResult` (JSON): `overallStatus`, `criteriaResults[]`, `canSubmit`, `evaluatedAt`
-- [ ] Lưu `submissionAIResult` trên task — **ghi một lần**, không ghi đè
-- [ ] `POST /api/submissions/task/{id}/precheck` — AI trước khi nộp
-- [ ] `canSubmit`: chặn 0%; logic partial ≤ 50% failed vẫn được nộp
-- [ ] Bắt buộc đã precheck trước khi `submit`
-- [ ] `GET /api/submissions/task/{id}/latest` — kết quả AI cho hirer/student
-- [ ] Entity `RevisionRequest` + `revisionHistory`, `latestRevision`, `revisionCount`
-- [ ] Giới hạn **tối đa 3** lần revision
-- [ ] `criteriaStatus[]` + `locked: true` khi criterion đã `met`
-- [ ] Request revision: clear submission + `submissionAIResult`; generate AI suggestions
-- [ ] Revision dựa trên `submissionAIResult`, không đánh `FAILED` thủ công theo ID
+- [x] `POST /api/files/upload` — multipart, trả URL
+- [x] Nhiều file mỗi lần nộp (`submittedFiles[]`)
+- [x] Model `SubmissionAIResult` (JSON): `overallStatus`, `criteriaResults[]`, `canSubmit`, `evaluatedAt`
+- [x] Lưu `submissionAIResult` trên task — **ghi một lần**, không ghi đè
+- [x] `POST /api/submissions/task/{id}/precheck` — AI trước khi nộp
+- [x] `canSubmit`: chặn 0%; logic partial ≤ 50% failed vẫn được nộp
+- [x] Bắt buộc đã precheck trước khi `submit`
+- [x] `GET /api/submissions/task/{id}/latest` — kết quả AI cho hirer/student
+- [x] Entity `RevisionRequest` + `revisionHistory`, `latestRevision`, `revisionCount`
+- [x] Giới hạn **tối đa 3** lần revision
+- [x] `criteriaStatus[]` + `locked: true` khi criterion đã `met`
+- [x] Request revision: clear submission + `submissionAIResult`; generate AI suggestions
+- [x] Revision dựa trên `submissionAIResult`, không đánh `FAILED` thủ công theo ID
 
 ---
 

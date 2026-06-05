@@ -15,10 +15,10 @@ public class Task {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
+    @Column(nullable = false,columnDefinition = "NVARCHAR(255)")
     private String title;
 
-    @Column(columnDefinition = "TEXT", nullable = false)
+    @Column(columnDefinition = "NVARCHAR(MAX)", nullable = false)
     private String description;
 
     @Column(length = 100)
@@ -51,6 +51,22 @@ public class Task {
     private LocalDateTime createdAt = LocalDateTime.now();
 
     private LocalDateTime updatedAt;
+
+    @Column(columnDefinition = "NVARCHAR(MAX)")
+    private String submissionAIResultJson;
+
+    private LocalDateTime latestPrecheckAt;
+
+    private Long precheckStudentId;
+
+    private Boolean precheckCanSubmit;
+
+    @Column(columnDefinition = "NVARCHAR(MAX)")
+    private String precheckSubmittedFilePathsJson;
+
+    @Builder.Default
+    @Column(nullable = false, columnDefinition = "INT DEFAULT 0")
+    private Integer revisionCount = 0;
 
     @PreUpdate
     public void onUpdate() { this.updatedAt = LocalDateTime.now(); }

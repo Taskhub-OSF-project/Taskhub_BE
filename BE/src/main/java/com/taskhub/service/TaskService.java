@@ -1,7 +1,6 @@
 package com.taskhub.service;
 
 import com.taskhub.dto.request.CreateTaskRequest;
-import com.taskhub.dto.request.RevisionRequest;
 import com.taskhub.dto.response.*;
 import com.taskhub.entity.*;
 import com.taskhub.enums.*;
@@ -164,21 +163,6 @@ public class TaskService {
     }
 
     @Transactional
-    public TaskResponse requestRevision(Long taskId, RevisionRequest req) {
-        Task task = findOwnedTask(taskId);
-        if (task.getStatus() != TaskStatus.SUBMITTED && task.getStatus() != TaskStatus.DISPUTED)
-            throw TaskHubException.badRequest("Can only request revision on submitted or disputed tasks");
-
-        for (AcceptanceCriteria c : task.getAcceptanceCriteria()) {
-            if (req.getFailedCriteriaIds().contains(c.getId())) {
-                c.setStatus(CriteriaStatus.FAILED);
-            }
-        }
-        transition(task, TaskStatus.IN_PROGRESS);
-        return toResponse(taskRepository.save(task));
-    }
-
-    @Transactional
     public TaskResponse disputeTask(Long taskId) {
         Task task = findTask(taskId);
         transition(task, TaskStatus.DISPUTED);
@@ -235,6 +219,7 @@ public class TaskService {
                 .hirerId(t.getHirer().getId()).hirerName(t.getHirer().getFullName())
                 .assignedToId(t.getAssignedTo() != null ? t.getAssignedTo().getId() : null)
                 .assignedToName(t.getAssignedTo() != null ? t.getAssignedTo().getFullName() : null)
+                .revisionCount(t.getRevisionCount() != null ? t.getRevisionCount() : 0)
                 .acceptanceCriteria(t.getAcceptanceCriteria().stream().map(c ->
                         CriteriaResponse.builder().id(c.getId())
                                 .description(c.getDescription()).status(c.getStatus()).build()

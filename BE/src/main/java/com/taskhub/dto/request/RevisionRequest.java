@@ -1,12 +1,11 @@
 package com.taskhub.dto.request;
 
-import jakarta.validation.constraints.*;
 import lombok.*;
-import java.util.List;
+import jakarta.validation.constraints.NotBlank;
 
 @Data @Builder @NoArgsConstructor @AllArgsConstructor
 public class RevisionRequest {
-    @NotEmpty
-    private List<Long> failedCriteriaIds;
-    private String feedback;
+    @NotBlank
+    private String reason;
+    private String description;
 }
