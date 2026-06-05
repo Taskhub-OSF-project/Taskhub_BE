@@ -19,6 +19,7 @@ public class TaskResponse {
     private String hirerName;
     private Long assignedToId;
     private String assignedToName;
+    private Integer revisionCount;
     private List<CriteriaResponse> acceptanceCriteria;
     private List<ApplicationResponse> applicants;
     private LocalDateTime createdAt;

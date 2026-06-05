@@ -40,6 +40,7 @@ public class SecurityConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .headers(h -> h.frameOptions(f -> f.sameOrigin()))
                 .authorizeHttpRequests(a -> a
+                        .requestMatchers("/api/files/**").authenticated()
                         .requestMatchers(
                                 "/",
                                 "/error",

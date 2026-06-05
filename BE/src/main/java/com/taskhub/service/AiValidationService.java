@@ -1,12 +1,18 @@
 package com.taskhub.service;
 
+import com.taskhub.dto.SubmittedFileDto;
+import com.taskhub.dto.response.CriteriaAIResult;
+import com.taskhub.dto.response.SubmissionAIResult;
 import com.taskhub.entity.CriteriaValidationDetail;
 import org.springframework.stereotype.Service;
 
 import java.text.Normalizer;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -36,6 +42,15 @@ public class AiValidationService {
             "^(lam|lam cho|lam sao|giup|giup toi|ok|oke|duoc|duoc roi|xong|het|test|abc|123|tuy y|tuy chon|"
                     + "khong can|khong quan trong|binh thuong|tam duoc|kieu gi cung duoc).*$",
             Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE
+    );
+
+    private static final Set<String> PRECHECK_STOPWORDS = Set.of(
+            "va", "hoac", "la", "co", "cac", "cua", "cho", "theo", "voi", "trong", "ngoai", "duoc",
+            "can", "phai", "nay", "kia", "mot", "hai", "ba", "bon", "nam", "sau", "bay", "tam", "chin",
+            "muoi", "toi", "thieu", "da", "it", "nhat", "nho", "hon", "lon", "day", "du", "yeu", "cau",
+            "nop", "lam", "em", "anh", "chi", "file", "tep", "tap", "tin",
+            "and", "or", "the", "a", "an", "to", "of", "for", "in", "on", "with", "by", "from", "as",
+            "is", "are", "be", "must", "should", "required", "requirement", "submit", "submission"
     );
 
     /**
@@ -184,6 +199,115 @@ public class AiValidationService {
     /**
      * Sinh báo cáo tranh chấp dạng text để tham khảo nhanh.
      */
+    public SubmissionAIResult evaluateSubmissionPrecheck(String notes, List<SubmittedFileDto> files, List<String> criteria) {
+        List<String> safeCriteria = criteria != null ? criteria : List.of();
+        Set<String> evidenceTokens = new LinkedHashSet<>(Arrays.asList(
+                normalizeForKeyword(buildPrecheckText(notes, files)).split("\\s+")
+        ));
+        evidenceTokens.remove("");
+
+        List<CriteriaAIResult> results = new ArrayList<>();
+        int metCount = 0;
+        int failedCount = 0;
+
+        for (int i = 0; i < safeCriteria.size(); i++) {
+            String criterion = safeCriteria.get(i) != null ? safeCriteria.get(i) : "";
+            List<String> keywords = extractPrecheckKeywords(criterion);
+            List<String> matchedKeywords = keywords.stream()
+                    .filter(evidenceTokens::contains)
+                    .toList();
+            double ratio = keywords.isEmpty() ? 0 : (double) matchedKeywords.size() / keywords.size();
+
+            String status;
+            String suggestion = null;
+            if (ratio >= 0.6) {
+                status = "MET";
+                metCount++;
+            } else if (ratio > 0) {
+                status = "PARTIAL";
+                suggestion = "Bo sung bang chung hoac notes lien quan den: "
+                        + String.join(", ", missingKeywords(keywords, matchedKeywords));
+            } else {
+                status = "FAILED";
+                failedCount++;
+                suggestion = "Chua thay bang chung dap ung criterion nay trong notes hoac metadata file.";
+            }
+
+            results.add(CriteriaAIResult.builder()
+                    .index(i)
+                    .criteria(criterion)
+                    .status(status)
+                    .locked("MET".equals(status))
+                    .evidence(matchedKeywords.isEmpty()
+                            ? "Matched keywords: none"
+                            : "Matched keywords: " + String.join(", ", matchedKeywords))
+                    .suggestion(suggestion)
+                    .build());
+        }
+
+        int total = safeCriteria.size();
+        boolean failedMoreThanHalf = total == 0 || failedCount > total / 2.0;
+        boolean canSubmit = metCount > 0 && !failedMoreThanHalf;
+        String overallStatus;
+        if (total > 0 && metCount == total) {
+            overallStatus = "PASSED";
+        } else if (metCount == 0 || failedMoreThanHalf) {
+            overallStatus = "FAILED";
+        } else {
+            overallStatus = "PARTIAL";
+        }
+
+        return SubmissionAIResult.builder()
+                .overallStatus(overallStatus)
+                .criteriaResults(results)
+                .canSubmit(canSubmit)
+                .evaluatedAt(java.time.LocalDateTime.now())
+                .build();
+    }
+
+    private String buildPrecheckText(String notes, List<SubmittedFileDto> files) {
+        StringBuilder text = new StringBuilder();
+        appendIfPresent(text, notes);
+        if (files != null) {
+            for (SubmittedFileDto file : files) {
+                if (file == null) {
+                    continue;
+                }
+                appendIfPresent(text, file.getFileName());
+                appendIfPresent(text, file.getPath());
+                appendIfPresent(text, file.getContentType());
+            }
+        }
+        return text.toString();
+    }
+
+    private void appendIfPresent(StringBuilder text, String value) {
+        if (value != null) {
+            text.append(value).append(' ');
+        }
+    }
+
+    private List<String> extractPrecheckKeywords(String criterion) {
+        return Arrays.stream(normalizeForKeyword(criterion).split("\\s+"))
+                .filter(token -> token.length() > 2)
+                .filter(token -> !PRECHECK_STOPWORDS.contains(token))
+                .distinct()
+                .toList();
+    }
+
+    private List<String> missingKeywords(List<String> keywords, List<String> matchedKeywords) {
+        Set<String> matchedSet = new LinkedHashSet<>(matchedKeywords);
+        return keywords.stream()
+                .filter(keyword -> !matchedSet.contains(keyword))
+                .limit(8)
+                .toList();
+    }
+
+    private String normalizeForKeyword(String input) {
+        String normalized = normalize(input != null ? input : "");
+        return normalized.replaceAll("[^a-z0-9]+", " ").trim();
+    }
+
     public String generateDisputeReport(String submissionNotes, List<String> criteria) {
         StringBuilder sb = new StringBuilder("=== DISPUTE REPORT ===\n\n");
         String lower = submissionNotes != null ? submissionNotes.toLowerCase() : "";

@@ -19,8 +19,11 @@ public class Submission {
     @JoinColumn(name = "student_id", nullable = false)
     private User student;
 
-    @Column(columnDefinition = "TEXT", nullable = false)
+    @Column(columnDefinition = "TEXT")
     private String fileUrl;
+
+    @Column(columnDefinition = "TEXT")
+    private String submittedFilesJson;
 
     @Column(columnDefinition = "TEXT")
     private String notes;

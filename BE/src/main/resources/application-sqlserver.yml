@@ -3,13 +3,13 @@ spring:
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:sqlserver://localhost:1433;databaseName=TaskhubData;encrypt=true;trustServerCertificate=true}
     username: ${SPRING_DATASOURCE_USERNAME:sa}
-    password: ${SPRING_DATASOURCE_PASSWORD:}
+    password: ${SPRING_DATASOURCE_PASSWORD:12345}
     driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
 
   jpa:
     hibernate:
       ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:update}
-    show-sql: ${SPRING_JPA_SHOW_SQL:false}
+    show-sql: ${SPRING_JPA_SHOW_SQL:true}
     properties:
       hibernate:
         format_sql: true

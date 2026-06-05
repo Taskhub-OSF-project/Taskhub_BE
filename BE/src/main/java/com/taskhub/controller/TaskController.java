@@ -5,6 +5,7 @@ import com.taskhub.dto.response.*;
 import com.taskhub.entity.AcceptanceCriteria;
 import com.taskhub.service.AiValidationService;
 import com.taskhub.service.CriteriaExtractionService;
+import com.taskhub.service.SubmissionService;
 import com.taskhub.service.TaskService;
 import com.taskhub.enums.TaskStatus;
 import jakarta.validation.Valid;
@@ -23,6 +24,7 @@ public class TaskController {
     private final TaskService taskService;
     private final AiValidationService aiValidationService;
     private final CriteriaExtractionService criteriaExtractionService;
+    private final SubmissionService submissionService;
 
     @PostMapping
     public ResponseEntity<ApiResponse<TaskResponse>> create(@Valid @RequestBody CreateTaskRequest req) {
@@ -111,9 +113,9 @@ public class TaskController {
     }
 
     @PostMapping("/{id}/revision")
-    public ResponseEntity<ApiResponse<TaskResponse>> revision(
+    public ResponseEntity<ApiResponse<RevisionRequestResponse>> revision(
             @PathVariable Long id, @Valid @RequestBody RevisionRequest req) {
-        return ResponseEntity.ok(ApiResponse.ok("Revision requested", taskService.requestRevision(id, req)));
+        return ResponseEntity.ok(ApiResponse.ok("Revision requested", submissionService.requestRevision(id, req)));
     }
 
     @PostMapping("/{id}/dispute")
