@@ -24,7 +24,7 @@ springdoc:
   api-docs:
     path: /v3/api-docs
 supabase:
-  url: ${SUPABASE_URL:}
-  service-role-key: ${SUPABASE_SERVICE_ROLE_KEY:}
+  url: ${SUPABASE_URL:https://wwduzspwejdyvbnjxkkz.supabase.co}
+  service-role-key: ${SUPABASE_SERVICE_ROLE_KEY:sb_secret_NrvFDh9zr64yO2tuPJm0yQ_aKt8Lnfe}
   storage:
     bucket: ${SUPABASE_STORAGE_BUCKET:taskhub-submissions}

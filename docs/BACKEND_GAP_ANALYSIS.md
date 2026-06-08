@@ -1,4 +1,4 @@
-﻿# TaskHub Backend — Việc cần làm
+# TaskHub Backend — Việc cần làm
 
 > Checklist đối chiếu BE với MVP FE. Đánh dấu `[x]` khi xong.
 
@@ -49,11 +49,11 @@
 
 ## Phase 4 — Dispute
 
-- [ ] `POST /api/tasks/{id}/dispute` — body: `reason`, `description`
-- [ ] Lưu `disputeReason`, `disputeDescription`, `aiReport` (structured) trên task
-- [ ] `GET /api/tasks/{id}/dispute/report` — JSON `AIReport` (assessments, recommendation 3 chiều)
-- [ ] `POST /api/tasks/{id}/dispute/resolve` — release payment / revision+refund / escalate
-- [ ] Refund + task về `ACTIVE` khi recommendation = request revision
+- [x] `POST /api/tasks/{id}/dispute` — body: `reason`, `description`
+- [x] Lưu `disputeReason`, `disputeDescription`, `aiReport` (structured) trên task
+- [x] `GET /api/tasks/{id}/dispute/report` — JSON `AIReport` (assessments, recommendation 3 chiều)
+- [x] `POST /api/tasks/{id}/dispute/resolve` — release payment / revision+refund / escalate
+- [x] Refund + task về `IN_PROGRESS` khi recommendation = request revision (giữ assignedTo)
 
 ---
 
