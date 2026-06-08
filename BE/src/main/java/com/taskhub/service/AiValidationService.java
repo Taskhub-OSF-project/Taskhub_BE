@@ -321,6 +321,71 @@ public class AiValidationService {
         return sb.toString();
     }
 
+    /**
+     * Sinh báo cáo dispute structured (JSON-serializable) với recommendation 3 chiều.
+     * - >= 70% MET → RELEASE_PAYMENT
+     * - <= 30% MET → REQUEST_REVISION
+     * - otherwise  → ESCALATE
+     */
+    public com.taskhub.dto.response.DisputeAIReport generateStructuredDisputeReport(
+            Long taskId,
+            String submissionNotes,
+            List<String> criteria,
+            String disputeReason,
+            String disputeDescription) {
+
+        List<String> safeCriteria = criteria != null ? criteria : List.of();
+        String lower = normalizeForKeyword(submissionNotes != null ? submissionNotes : "");
+        Set<String> evidenceTokens = new LinkedHashSet<>(Arrays.asList(lower.split("\\s+")));
+        evidenceTokens.remove("");
+
+        List<com.taskhub.dto.response.DisputeAIReport.CriterionAssessment> assessments = new ArrayList<>();
+        int metCount = 0;
+
+        for (int i = 0; i < safeCriteria.size(); i++) {
+            String criterion = safeCriteria.get(i) != null ? safeCriteria.get(i) : "";
+            List<String> keywords = extractPrecheckKeywords(criterion);
+            List<String> matched = keywords.stream().filter(evidenceTokens::contains).toList();
+            double ratio = keywords.isEmpty() ? 0 : (double) matched.size() / keywords.size();
+            boolean met = ratio >= 0.3;
+            if (met) metCount++;
+
+            String evidence = matched.isEmpty()
+                    ? "No matching keywords found"
+                    : "Matched keywords: " + String.join(", ", matched);
+
+            assessments.add(com.taskhub.dto.response.DisputeAIReport.CriterionAssessment.builder()
+                    .criterionIndex(i)
+                    .criterion(criterion)
+                    .assessment(met ? "MET" : "NOT_MET")
+                    .met(met)
+                    .evidence(evidence)
+                    .build());
+        }
+
+        int total = safeCriteria.size();
+        int metPct = total == 0 ? 0 : (int) Math.round((metCount * 100.0) / total);
+
+        String recommendation;
+        if (metPct >= 70) {
+            recommendation = "RELEASE_PAYMENT";
+        } else if (metPct <= 30) {
+            recommendation = "REQUEST_REVISION";
+        } else {
+            recommendation = "ESCALATE";
+        }
+
+        return com.taskhub.dto.response.DisputeAIReport.builder()
+                .taskId(taskId)
+                .assessments(assessments)
+                .recommendation(recommendation)
+                .metPercentage(metPct)
+                .disputeReason(disputeReason)
+                .disputeDescription(disputeDescription)
+                .reportGeneratedAt(java.time.LocalDateTime.now())
+                .build();
+    }
+
     public record ValidationResult(boolean valid, String message, List<CriteriaValidationDetail> details) {
         public boolean isValid() { return valid; }
         public String getMessage() { return message; }

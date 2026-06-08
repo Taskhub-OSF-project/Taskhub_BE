@@ -138,4 +138,43 @@ public class EscrowService {
         taskRepository.save(task);
     }
 
+    /**
+     * Refund escrow về ví hirer khi resolve dispute với action REQUEST_REVISION.
+     * Khác với refundEscrow():
+     * - KHÔNG clear assignedTo (student vẫn giữ task)
+     * - Task về IN_PROGRESS (thay vì LOCKED)
+     * - Không cần validateTransition từ LOCKED, dùng transition DISPUTED → IN_PROGRESS
+     */
+    @Transactional
+    public void refundDisputeToRevision(Long taskId) {
+        Task task = taskService.findTask(taskId);
+        if (task.getStatus() != TaskStatus.DISPUTED)
+            throw TaskHubException.badRequest("Task must be DISPUTED to refund for revision");
+
+        User hirer = task.getHirer();
+        Escrow escrow = escrowRepository.findByTaskId(taskId)
+                .orElseThrow(() -> TaskHubException.notFound("Escrow not found"));
+        if (escrow.getStatus() != EscrowStatus.FUNDED)
+            throw TaskHubException.badRequest("Escrow not in FUNDED state");
+
+        // Hoàn tiền cho hirer
+        hirer.setWalletBalance(hirer.getWalletBalance().add(escrow.getAmount()));
+        userRepository.save(hirer);
+        walletService.recordTransaction(hirer, WalletTransactionType.refund, escrow.getAmount(), task);
+
+        escrow.setStatus(EscrowStatus.REFUNDED);
+        escrowRepository.save(escrow);
+
+        // Giữ assignedTo, reset AI result + precheck để student có thể precheck lại
+        task.setSubmissionAIResultJson(null);
+        task.setLatestPrecheckAt(null);
+        task.setPrecheckStudentId(null);
+        task.setPrecheckCanSubmit(null);
+        task.setPrecheckSubmittedFilePathsJson(null);
+
+        // Task → IN_PROGRESS (student vẫn được assign, cần fund escrow lại trước khi submit)
+        taskService.transition(task, TaskStatus.IN_PROGRESS);
+        taskRepository.save(task);
+    }
+
 }
