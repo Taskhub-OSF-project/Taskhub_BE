@@ -1,11 +1,13 @@
 package com.taskhub.dto.request;
 
-import jakarta.validation.constraints.*;
+import com.taskhub.dto.SubmittedFileDto;
 import lombok.*;
+
+import java.util.List;
 
 @Data @Builder @NoArgsConstructor @AllArgsConstructor
 public class SubmissionRequest {
-    @NotBlank
     private String fileUrl;
     private String notes;
+    private List<SubmittedFileDto> submittedFiles;
 }

@@ -3,8 +3,14 @@ package com.taskhub.controller;
 import com.taskhub.dto.request.*;
 import com.taskhub.dto.response.*;
 import com.taskhub.entity.AcceptanceCriteria;
+import com.taskhub.dto.request.DisputeRequest;
+import com.taskhub.dto.request.DisputeResolveRequest;
+import com.taskhub.dto.response.DisputeAIReport;
+import com.taskhub.dto.response.DisputeResolveResponse;
 import com.taskhub.service.AiValidationService;
 import com.taskhub.service.CriteriaExtractionService;
+import com.taskhub.service.DisputeService;
+import com.taskhub.service.SubmissionService;
 import com.taskhub.service.TaskService;
 import com.taskhub.enums.TaskStatus;
 import jakarta.validation.Valid;
@@ -23,6 +29,8 @@ public class TaskController {
     private final TaskService taskService;
     private final AiValidationService aiValidationService;
     private final CriteriaExtractionService criteriaExtractionService;
+    private final SubmissionService submissionService;
+    private final DisputeService disputeService;
 
     @PostMapping
     public ResponseEntity<ApiResponse<TaskResponse>> create(@Valid @RequestBody CreateTaskRequest req) {
@@ -111,14 +119,40 @@ public class TaskController {
     }
 
     @PostMapping("/{id}/revision")
-    public ResponseEntity<ApiResponse<TaskResponse>> revision(
+    public ResponseEntity<ApiResponse<RevisionRequestResponse>> revision(
             @PathVariable Long id, @Valid @RequestBody RevisionRequest req) {
-        return ResponseEntity.ok(ApiResponse.ok("Revision requested", taskService.requestRevision(id, req)));
+        return ResponseEntity.ok(ApiResponse.ok("Revision requested", submissionService.requestRevision(id, req)));
     }
 
+    /**
+     * POST /api/tasks/{id}/dispute
+     * Hirer mở dispute khi task SUBMITTED. Sinh AI report và lưu vào task.
+     */
     @PostMapping("/{id}/dispute")
-    public ResponseEntity<ApiResponse<TaskResponse>> dispute(@PathVariable Long id) {
-        return ResponseEntity.ok(ApiResponse.ok("Task disputed", taskService.disputeTask(id)));
+    public ResponseEntity<ApiResponse<DisputeAIReport>> dispute(
+            @PathVariable Long id,
+            @Valid @RequestBody DisputeRequest req) {
+        return ResponseEntity.ok(ApiResponse.ok("Dispute opened", disputeService.openDispute(id, req)));
+    }
+
+    /**
+     * GET /api/tasks/{id}/dispute/report
+     * Hirer hoặc student xem báo cáo AI cho dispute.
+     */
+    @GetMapping("/{id}/dispute/report")
+    public ResponseEntity<ApiResponse<DisputeAIReport>> getDisputeReport(@PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.ok(disputeService.getDisputeReport(id)));
+    }
+
+    /**
+     * POST /api/tasks/{id}/dispute/resolve
+     * Hirer giải quyết dispute: RELEASE_PAYMENT | REQUEST_REVISION | ESCALATE.
+     */
+    @PostMapping("/{id}/dispute/resolve")
+    public ResponseEntity<ApiResponse<DisputeResolveResponse>> resolveDispute(
+            @PathVariable Long id,
+            @Valid @RequestBody DisputeResolveRequest req) {
+        return ResponseEntity.ok(ApiResponse.ok("Dispute resolved", disputeService.resolveDispute(id, req)));
     }
 
     @PatchMapping("/{id}")

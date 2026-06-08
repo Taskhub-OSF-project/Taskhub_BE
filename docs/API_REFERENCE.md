@@ -17,8 +17,9 @@
 7. [Tasks](#7-tasks)
 8. [Applications](#8-applications)
 9. [Submissions](#9-submissions)
-10. [Escrow](#10-escrow)
-11. [Luồng gợi ý (Hirer / Student)](#11-luồng-gợi-ý-hirer--student)
+10. [Files](#10-files)
+11. [Escrow](#11-escrow)
+12. [Luồng gợi ý (Hirer / Student)](#12-luồng-gợi-ý-hirer--student)
 
 ---
 
@@ -529,18 +530,20 @@ Chuyển thẳng sang `COMPLETED` (ít dùng; thường dùng approve submission
 
 ### POST `/api/tasks/{id}/revision`
 
-Yêu cầu chỉnh sửa — **HIRER**, task `SUBMITTED` hoặc `DISPUTED`.
+Compatibility endpoint for requesting revision. Preferred endpoint is
+`POST /api/submissions/task/{taskId}/revision`.
 
 **Body (RevisionRequest):**
 
 ```json
 {
-  "failedCriteriaIds": [2],
-  "feedback": "Can bo sung file PDF..."
+  "reason": "Bai nop con thieu section CTA",
+  "description": "Vui long bo sung phan call-to-action va kiem tra lai mau chu dao."
 }
 ```
 
-→ `IN_PROGRESS`, đánh `FAILED` cho criteria trong list.
+Rules and response are identical to the preferred submissions endpoint. Hirer cannot pass failed
+criteria IDs manually; backend derives revision suggestions from latest `SubmissionAIResult`.
 
 ---
 
@@ -616,11 +619,113 @@ Danh sách task student đã apply nhưng chưa được chọn (`PENDING`).
 
 Base path: `/api/submissions` — **JWT required**
 
+### POST `/api/submissions/task/{taskId}/precheck`
+
+Student chay precheck truoc khi submit that. API danh gia `submittedFiles[]` + `notes` voi acceptance criteria bang heuristic co cau truc, khong goi LLM that.
+
+**Rules:**
+
+- Chi `STUDENT`
+- Task phai ton tai va dang `IN_PROGRESS`
+- Student phai la `assignedTo`
+- `submittedFiles[]` bat buoc va validate nhu API submit Phase 3.2
+- Precheck khong tao `Submission` va khong doi task status
+- Latest result duoc luu tren Task lam current submit gate
+- Sau khi hirer request revision, backend clear current precheck; student phai precheck lai truoc submit tiep theo
+
+**Request:**
+
+```json
+{
+  "submittedFiles": [
+    {
+      "fileName": "report.pdf",
+      "path": "submissions/task-12/user-5/report.pdf",
+      "url": null,
+      "contentType": "application/pdf",
+      "size": 123456,
+      "uploadedAt": "2026-06-04T20:44:31"
+    }
+  ],
+  "notes": "Em da hoan thanh theo yeu cau."
+}
+```
+
+**Response `data` (SubmissionAIResult):**
+
+```json
+{
+  "overallStatus": "PARTIAL",
+  "criteriaResults": [
+    {
+      "index": 0,
+      "criteria": "Nop 1 file PNG landing page 1920x1080",
+      "status": "MET",
+      "locked": true,
+      "evidence": "Matched keywords: png, landing, page, 1920, 1080",
+      "suggestion": null
+    },
+    {
+      "index": 1,
+      "criteria": "Co section hero va CTA",
+      "status": "PARTIAL",
+      "locked": false,
+      "evidence": "Matched keywords: hero",
+      "suggestion": "Bo sung bang chung hoac notes lien quan den: section, cta"
+    }
+  ],
+  "canSubmit": true,
+  "evaluatedAt": "2026-06-04T21:00:00"
+}
+```
+
+**Heuristic status:**
+
+- `MET`: keyword match ratio `>= 0.6`
+- `PARTIAL`: keyword match ratio `> 0` va `< 0.6`
+- `FAILED`: khong co keyword/evidence match
+- `locked = true` chi khi status la `MET`
+
+**Rule `canSubmit`:**
+
+- `false` neu `0` criterion `MET`
+- `false` neu `FAILED > 50%` tong criteria
+- `true` neu co it nhat `1` criterion `MET` va `FAILED <= 50%`
+- `PARTIAL` khong tinh la `FAILED`
+
+---
 ### POST `/api/submissions/task/{taskId}`
+**Phase 3.4 precheck requirement:**
+
+- Student phai goi `POST /api/submissions/task/{taskId}/precheck` truoc khi submit.
+- Latest precheck phai thuoc chinh assigned student cua task.
+- Latest precheck phai co `canSubmit = true`.
+- `submittedFiles[].path` khi submit phai trung voi path list da precheck. Backend sort path list de so sanh.
+- Chua precheck -> `400`: `Precheck is required before submission`.
+- Precheck `canSubmit=false` -> `400`: `Latest precheck does not allow submission`.
+- Files doi sau precheck -> `400`: `Submitted files changed after precheck. Please run precheck again.`.
 
 Student nộp bài — task `IN_PROGRESS`, đúng assignee.
 
-**Body:**
+**Body mới (Phase 3.2, ưu tiên `submittedFiles`):**
+
+```json
+{
+  "submittedFiles": [
+    {
+      "fileName": "work.zip",
+      "path": "submissions/task-1/user-2/1780580671131-work.zip",
+      "url": null,
+      "contentType": "application/zip",
+      "size": 123456,
+      "uploadedAt": "2026-06-04T20:44:31"
+    }
+  ],
+  "notes": "Em đã nộp file theo yêu cầu."
+}
+```
+
+`fileUrl` là legacy/optional để không phá API cũ:
 
 ```json
 {
@@ -628,6 +733,19 @@ Student nộp bài — task `IN_PROGRESS`, đúng assignee.
   "notes": "Em da nop file PDF 5 trang..."
 }
 ```
+
+Nếu có `submittedFiles[]`, backend ưu tiên `submittedFiles[]`. Nếu không có cả `submittedFiles[]` và `fileUrl`, API trả `400`.
+
+Phase 3.4: submit nen gui submittedFiles[] da precheck. ileUrl chi con la legacy field; neu khong co path list trung voi precheck thi backend se yeu cau precheck lai.
+
+**Validate `submittedFiles[]`:**
+
+- `fileName` không blank
+- `path` không blank, không chứa `../`
+- `path` bắt đầu bằng `submissions/task-{taskId}/`
+- `path` thuộc user hiện tại (`/user-{currentUserId}/`)
+- `contentType`: `application/pdf`, `image/png`, `image/jpeg`, `application/vnd.openxmlformats-officedocument.wordprocessingml.document`, `application/zip`
+- `size > 0` và `<= 20MB`
 
 **Quy tắc AI (heuristic):**
 
@@ -640,14 +758,24 @@ Student nộp bài — task `IN_PROGRESS`, đúng assignee.
 {
   "id": 1,
   "taskId": 1,
-  "studentId": 1,
-  "studentName": "...",
-  "fileUrl": "...",
-  "notes": "...",
+  "studentId": 2,
+  "studentName": "Nguyen Van A",
+  "fileUrl": null,
+  "submittedFiles": [
+    {
+      "fileName": "work.zip",
+      "path": "submissions/task-1/user-2/1780580671131-work.zip",
+      "url": null,
+      "contentType": "application/zip",
+      "size": 123456,
+      "uploadedAt": "2026-06-04T20:44:31"
+    }
+  ],
+  "notes": "Em đã nộp file theo yêu cầu.",
   "aiScore": 75,
   "aiReport": "Submission meets criteria.",
   "isRevision": false,
-  "submittedAt": "..."
+  "submittedAt": "2026-06-04T20:50:00"
 }
 ```
 
@@ -655,6 +783,143 @@ Task → `SUBMITTED`.
 
 ---
 
+### POST `/api/submissions/task/{taskId}/revision`
+
+Hirer owner yeu cau student sua bai dua tren latest `SubmissionAIResult`.
+
+**Rules:**
+
+- Chi `HIRER`
+- Hirer phai la owner cua task
+- Task phai dang `SUBMITTED`
+- Task phai co latest `Submission`
+- Task phai co current `submissionAIResult`
+- Backend tu generate `aiSuggestions` tu criteria status `PARTIAL`/`FAILED`
+- `MET` criteria co `locked = true` va khong nam trong revision suggestions
+- Toi da 3 lan revision; lan thu 4 tra `400`
+- Neu tat ca criteria `MET`, tra `400`: `All criteria are met. Revision is not recommended.`
+
+**Request:**
+
+```json
+{
+  "reason": "Bai nop con thieu section CTA",
+  "description": "Vui long bo sung phan call-to-action va kiem tra lai mau chu dao."
+}
+```
+
+**Success effects:**
+
+- Tao record `RevisionRequest`
+- `revisionNumber = revisionCount + 1`
+- Tang `Task.revisionCount`
+- Task `SUBMITTED` -> `IN_PROGRESS`
+- Khong xoa `Submission` cu hay file Supabase
+- Luu `aiSuggestionsJson` vao revision request truoc khi clear current `submissionAIResult`/precheck gate tren task
+- Student phai precheck lai truoc submit tiep theo
+
+**Response `data` (RevisionRequestResponse):**
+
+```json
+{
+  "id": 1,
+  "taskId": 1,
+  "submissionId": 10,
+  "requestedById": 1,
+  "studentId": 2,
+  "revisionNumber": 1,
+  "reason": "Bai nop con thieu section CTA",
+  "description": "Vui long bo sung phan call-to-action va kiem tra lai mau chu dao.",
+  "aiSuggestions": [
+    {
+      "index": 2,
+      "criteria": "Mau chu dao xanh duong xuat hien tren button, heading, background",
+      "status": "PARTIAL",
+      "suggestion": "Bo sung bang chung ve button, heading, background mau xanh duong."
+    }
+  ],
+  "createdAt": "2026-06-05T10:30:00"
+}
+```
+
+**Max revision error:**
+
+```json
+{
+  "success": false,
+  "message": "Maximum revision requests reached. Please dispute or resolve the task."
+}
+```
+
+---
+
+### GET `/api/submissions/task/{taskId}/revisions`
+
+Revision history cua task.
+
+**Quyen xem:**
+
+- Hirer owner cua task duoc xem
+- Assigned student cua task duoc xem
+- User khac -> `403`
+
+**Response `data`:** `RevisionRequestResponse[]`
+
+---
+
+### GET `/api/submissions/task/{taskId}/latest`
+
+Tra latest submission, current precheck AI result, revision count va latest/history revision cua task.
+
+**Quyen xem:**
+
+- Hirer owner cua task duoc xem.
+- Assigned student cua task duoc xem.
+- User khac -> `403`.
+
+**Response `data` (LatestSubmissionResultResponse):**
+
+```json
+{
+  "taskId": 1,
+  "taskStatus": "SUBMITTED",
+  "latestSubmission": {
+    "id": 10,
+    "taskId": 1,
+    "studentId": 2,
+    "studentName": "Nguyen Van A",
+    "fileUrl": null,
+    "submittedFiles": [
+      {
+        "fileName": "work.zip",
+        "path": "submissions/task-1/user-2/1780580671131-work.zip",
+        "url": null,
+        "contentType": "application/zip",
+        "size": 123456,
+        "uploadedAt": "2026-06-04T20:44:31"
+      }
+    ],
+    "notes": "work file application deliverable",
+    "aiScore": 75,
+    "aiReport": "Submission meets criteria.",
+    "isRevision": false,
+    "submittedAt": "2026-06-04T20:50:00"
+  },
+  "submissionAIResult": {
+    "overallStatus": "PARTIAL",
+    "criteriaResults": [],
+    "canSubmit": true,
+    "evaluatedAt": "2026-06-04T21:00:00"
+  },
+  "revisionCount": 0,
+  "latestRevision": null,
+  "revisionHistory": []
+}
+```
+
+Sau revision, `submissionAIResult` co the la `null` vi backend da clear current precheck de bat student precheck lai. `latestRevision` va `revisionHistory` van tra revision da luu.
+
+---
 ### POST `/api/submissions/task/{taskId}/approve`
 
 Hirer chấp nhận — **HIRER owner**.
@@ -679,7 +944,59 @@ Báo cáo tranh chấp dạng **text** (AI heuristic theo notes vs criteria).
 
 ---
 
-## 10. Escrow
+## 10. Files
+
+Base path: `/api/files` - **JWT required**
+
+### POST `/api/files/upload`
+
+Upload file to Supabase Storage private bucket `taskhub-submissions`.
+
+**Request:** `multipart/form-data`
+
+| Part | Type | Required |
+|------|------|----------|
+| `file` | file | yes |
+| `taskId` | number | yes |
+
+**Allowed content types:**
+
+- `application/pdf`
+- `image/png`
+- `image/jpeg`
+- `application/vnd.openxmlformats-officedocument.wordprocessingml.document`
+- `application/zip`
+
+**Max size:** `20MB`
+
+**Response `data` (FileUploadResponse):**
+
+```json
+{
+  "fileName": "report.pdf",
+  "path": "submissions/task-12/user-5/1780308000000-report.pdf",
+  "url": null,
+  "contentType": "application/pdf",
+  "size": 123456,
+  "uploadedAt": "2026-06-04T19:30:00"
+}
+```
+
+`url` is `null` in Phase 3.1 because the bucket is private. Use `path` for later submission metadata; add signed URL API in a later phase.
+
+Required env/config:
+
+```yaml
+supabase:
+  url: ${SUPABASE_URL:}
+  service-role-key: ${SUPABASE_SERVICE_ROLE_KEY:}
+  storage:
+    bucket: ${SUPABASE_STORAGE_BUCKET:taskhub-submissions}
+```
+
+---
+
+## 11. Escrow
 
 Base path: `/api/escrow` — **JWT required**
 
@@ -714,7 +1031,7 @@ Hoàn escrow về ví hirer — **HIRER**, dispute path.
 
 ---
 
-## 11. Luồng gợi ý (Hirer / Student)
+## 12. Luồng gợi ý (Hirer / Student)
 
 ### Hirer — tạo task đến publish
 
@@ -737,7 +1054,7 @@ Hoàn escrow về ví hirer — **HIRER**, dispute path.
 11. POST /api/applications/{id}/accept
 12. GET  /api/submissions/task/{taskId}     (sau khi student nộp)
 13. POST /api/submissions/task/{taskId}/approve
-    HOẶC POST /api/tasks/{id}/revision
+    HOAC POST /api/submissions/task/{taskId}/revision
     HOẶC POST /api/tasks/{id}/dispute
 ```
 
@@ -779,9 +1096,14 @@ Hoàn escrow về ví hirer — **HIRER**, dispute path.
 | POST | `/api/applications/{id}/accept` | ✓ | HIRER |
 | GET | `/api/applications/task/{taskId}` | ✓ | HIRER |
 | GET | `/api/applications/mine` | ✓ | STUDENT |
+| POST | `/api/files/upload` | ✓ | * |
+| POST | `/api/submissions/task/{taskId}/precheck` | ? | STUDENT |
 | POST | `/api/submissions/task/{taskId}` | ✓ | STUDENT |
+| POST | `/api/submissions/task/{taskId}/revision` | ? | HIRER |
+| GET | `/api/submissions/task/{taskId}/revisions` | ? | HIRER/STUDENT |
 | POST | `/api/submissions/task/{taskId}/approve` | ✓ | HIRER |
 | GET | `/api/submissions/task/{taskId}` | ✓ | * |
+| GET | `/api/submissions/task/{taskId}/latest` | ? | HIRER/STUDENT |
 | GET | `/api/submissions/task/{taskId}/dispute-report` | ✓ | * |
 | POST | `/api/escrow/fund/{taskId}` | ✓ | HIRER |
 | POST | `/api/escrow/release/{taskId}` | ✓ | HIRER |

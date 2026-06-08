@@ -1,63 +1,124 @@
 package com.taskhub.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.taskhub.dto.SubmittedFileDto;
+import com.taskhub.dto.request.RevisionRequest;
 import com.taskhub.dto.request.SubmissionRequest;
+import com.taskhub.dto.response.CriteriaAIResult;
+import com.taskhub.dto.response.LatestSubmissionResultResponse;
+import com.taskhub.dto.response.RevisionRequestResponse;
+import com.taskhub.dto.response.RevisionSuggestionResponse;
+import com.taskhub.dto.response.SubmissionAIResult;
 import com.taskhub.dto.response.SubmissionResponse;
-import com.taskhub.entity.*;
-import com.taskhub.enums.*;
+import com.taskhub.entity.AcceptanceCriteria;
+import com.taskhub.entity.Submission;
+import com.taskhub.entity.Task;
+import com.taskhub.entity.User;
+import com.taskhub.enums.CriteriaStatus;
+import com.taskhub.enums.Role;
+import com.taskhub.enums.TaskStatus;
 import com.taskhub.exception.TaskHubException;
-import com.taskhub.repository.*;
+import com.taskhub.repository.RevisionRequestRepository;
+import com.taskhub.repository.SubmissionRepository;
+import com.taskhub.repository.TaskRepository;
 import com.taskhub.security.AuthUtil;
+import com.taskhub.util.FileUploadValidator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import java.util.List;
 
-/**
- * Service xử lý nghiệp vụ nộp bài và duyệt bài.
- * Thuộc module Submission, được gọi từ SubmissionController.
- */
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Locale;
+
 @Service
 @RequiredArgsConstructor
 public class SubmissionService {
     private final SubmissionRepository submissionRepo;
+    private final RevisionRequestRepository revisionRequestRepo;
     private final TaskRepository taskRepo;
     private final AiValidationService aiValidation;
     private final TaskService taskService;
     private final EscrowService escrowService;
+    private final ObjectMapper objectMapper;
 
-    /**
-     * Student nộp bài cho task đang IN_PROGRESS.
-     * Rule: chỉ assignee được nộp, chấm điểm heuristic.
-     */
+    @Transactional
+    public SubmissionAIResult precheck(Long taskId, SubmissionRequest req) {
+        if (req == null) {
+            throw TaskHubException.badRequest("Request body is required");
+        }
+        User student = AuthUtil.getCurrentUser();
+        if (student.getRole() != Role.STUDENT) {
+            throw TaskHubException.forbidden("Only students can precheck submissions");
+        }
+
+        Task task = taskService.findTask(taskId);
+        if (task.getStatus() != TaskStatus.IN_PROGRESS) {
+            throw TaskHubException.badRequest("Task is not IN_PROGRESS");
+        }
+        if (task.getAssignedTo() == null || !task.getAssignedTo().getId().equals(student.getId())) {
+            throw TaskHubException.forbidden("Not assigned to you");
+        }
+
+        List<SubmittedFileDto> submittedFiles = normalizeSubmittedFiles(req, taskId, student.getId());
+        if (submittedFiles.isEmpty()) {
+            throw TaskHubException.badRequest("submittedFiles is required for precheck");
+        }
+
+        List<String> criteria = task.getAcceptanceCriteria().stream()
+                .map(AcceptanceCriteria::getDescription)
+                .toList();
+        SubmissionAIResult result = aiValidation.evaluateSubmissionPrecheck(req.getNotes(), submittedFiles, criteria);
+
+        task.setSubmissionAIResultJson(toJson(result));
+        task.setLatestPrecheckAt(result.getEvaluatedAt());
+        task.setPrecheckStudentId(student.getId());
+        task.setPrecheckCanSubmit(result.isCanSubmit());
+        task.setPrecheckSubmittedFilePathsJson(toJsonStringList(extractSortedPaths(submittedFiles)));
+        taskRepo.save(task);
+
+        return result;
+    }
+
     @Transactional
     public SubmissionResponse submit(Long taskId, SubmissionRequest req) {
         User student = AuthUtil.getCurrentUser();
-        // Chỉ STUDENT được submit.
-        if (student.getRole() != Role.STUDENT)
+        if (student.getRole() != Role.STUDENT) {
             throw TaskHubException.forbidden("Only students can submit");
+        }
 
         Task task = taskService.findTask(taskId);
-        if (task.getStatus() != TaskStatus.IN_PROGRESS)
+        if (task.getStatus() != TaskStatus.IN_PROGRESS) {
             throw TaskHubException.badRequest("Task is not IN_PROGRESS");
-        if (!task.getAssignedTo().getId().equals(student.getId()))
+        }
+        if (task.getAssignedTo() == null || !task.getAssignedTo().getId().equals(student.getId())) {
             throw TaskHubException.forbidden("Not assigned to you");
+        }
 
-        // Chỉ đánh giá criteria chưa PASSED.
-        List<String> criteriaToEvaluate = task.getAcceptanceCriteria().stream()
-                .filter(c -> c.getStatus() != CriteriaStatus.PASSED)
-                .map(AcceptanceCriteria::getDescription).toList();
+        List<SubmittedFileDto> submittedFiles = normalizeSubmittedFiles(req, taskId, student.getId());
+        String legacyFileUrl = trimToNull(req.getFileUrl());
+        if (submittedFiles.isEmpty() && legacyFileUrl == null) {
+            throw TaskHubException.badRequest("Either submittedFiles or fileUrl is required");
+        }
+        validateLatestPrecheckForSubmit(task, student, submittedFiles);
+        SubmissionAIResult latestPrecheck = fromAiResultJson(task.getSubmissionAIResultJson());
+        int score = calculatePrecheckScore(latestPrecheck);
 
-        int score = aiValidation.scoreSubmission(req.getNotes(), criteriaToEvaluate);
-
-        if (score == 0)
-            throw TaskHubException.badRequest("Submission score is 0%. Cannot submit. Please review requirements.");
-
-        boolean isRevision = submissionRepo.findByTaskId(taskId).size() > 0;
-
+        boolean isRevision = !submissionRepo.findByTaskId(taskId).isEmpty();
         Submission submission = Submission.builder()
-                .task(task).student(student).fileUrl(req.getFileUrl()).notes(req.getNotes())
-                .aiScore(score).isRevision(isRevision)
-                .aiReport(score < 70 ? "Warning: Score below 70%. Submission allowed but may need revision." : "Submission meets criteria.")
+                .task(task)
+                .student(student)
+                .fileUrl(submittedFiles.isEmpty() ? legacyFileUrl : null)
+                .submittedFilesJson(submittedFiles.isEmpty() ? null : toJson(submittedFiles))
+                .notes(req.getNotes())
+                .aiScore(score)
+                .isRevision(isRevision)
+                .aiReport(score < 70
+                        ? "Warning: Precheck passed but score below 70%. Submission allowed but may need revision."
+                        : "Submission meets criteria.")
                 .build();
         submissionRepo.save(submission);
 
@@ -67,53 +128,404 @@ public class SubmissionService {
         return toResponse(submission);
     }
 
-    /**
-     * Hirer duyệt bài: mark criteria PASSED, task COMPLETED, release escrow.
-     */
+    @Transactional
+    public RevisionRequestResponse requestRevision(Long taskId, RevisionRequest req) {
+        if (req == null) {
+            throw TaskHubException.badRequest("Request body is required");
+        }
+        if (isBlank(req.getReason())) {
+            throw TaskHubException.badRequest("reason is required");
+        }
+        User hirer = AuthUtil.getCurrentUser();
+        if (hirer.getRole() != Role.HIRER) {
+            throw TaskHubException.forbidden("Only hirers can request revision");
+        }
+
+        Task task = taskService.findTask(taskId);
+        if (task.getHirer() == null || !task.getHirer().getId().equals(hirer.getId())) {
+            throw TaskHubException.forbidden("Not your task");
+        }
+        if (task.getStatus() != TaskStatus.SUBMITTED) {
+            throw TaskHubException.badRequest("Task is not SUBMITTED");
+        }
+        if (task.getAssignedTo() == null) {
+            throw TaskHubException.badRequest("Task has no assigned student");
+        }
+
+        Submission latestSubmission = submissionRepo.findTopByTaskIdOrderBySubmittedAtDesc(taskId)
+                .orElseThrow(() -> TaskHubException.badRequest("No latest submission found"));
+        SubmissionAIResult aiResult = fromAiResultJson(task.getSubmissionAIResultJson());
+        if (aiResult == null) {
+            throw TaskHubException.badRequest("Submission AI result is required before requesting revision");
+        }
+
+        int currentRevisionCount = currentRevisionCount(task, taskId);
+        if (currentRevisionCount >= 3) {
+            throw TaskHubException.badRequest("Maximum revision requests reached. Please dispute or resolve the task.");
+        }
+
+        List<RevisionSuggestionResponse> suggestions = buildRevisionSuggestions(aiResult);
+        if (suggestions.isEmpty()) {
+            throw TaskHubException.badRequest("All criteria are met. Revision is not recommended.");
+        }
+
+        com.taskhub.entity.RevisionRequest revision = com.taskhub.entity.RevisionRequest.builder()
+                .task(task)
+                .submission(latestSubmission)
+                .requestedBy(hirer)
+                .student(task.getAssignedTo())
+                .revisionNumber(currentRevisionCount + 1)
+                .reason(req.getReason().trim())
+                .description(trimToNull(req.getDescription()))
+                .aiSuggestionsJson(toRevisionSuggestionsJson(suggestions))
+                .build();
+        com.taskhub.entity.RevisionRequest savedRevision = revisionRequestRepo.save(revision);
+
+        task.setRevisionCount(currentRevisionCount + 1);
+        clearLatestPrecheck(task);
+        taskService.transition(task, TaskStatus.IN_PROGRESS);
+        taskRepo.save(task);
+
+        return toRevisionResponse(savedRevision);
+    }
+
     @Transactional
     public void approveSubmission(Long taskId) {
         User hirer = AuthUtil.getCurrentUser();
         Task task = taskService.findTask(taskId);
-        if (!task.getHirer().getId().equals(hirer.getId()))
+        if (!task.getHirer().getId().equals(hirer.getId())) {
             throw TaskHubException.forbidden("Not your task");
-        if (task.getStatus() != TaskStatus.SUBMITTED)
+        }
+        if (task.getStatus() != TaskStatus.SUBMITTED) {
             throw TaskHubException.badRequest("Task is not SUBMITTED");
+        }
 
-        // Duyệt toàn bộ criteria và chuyển trạng thái task.
         task.getAcceptanceCriteria().forEach(c -> c.setStatus(CriteriaStatus.PASSED));
         taskService.transition(task, TaskStatus.COMPLETED);
         taskRepo.save(task);
         escrowService.releaseEscrow(taskId);
     }
 
-    /**
-     * Lấy lịch sử submission theo task.
-     */
+    @Transactional(readOnly = true)
     public List<SubmissionResponse> getTaskSubmissions(Long taskId) {
         return submissionRepo.findByTaskId(taskId).stream().map(this::toResponse).toList();
     }
 
-    /**
-     * Tạo báo cáo tranh chấp dạng text từ notes và criteria.
-     */
+    @Transactional(readOnly = true)
+    public LatestSubmissionResultResponse getLatest(Long taskId) {
+        User currentUser = AuthUtil.getCurrentUser();
+        Task task = taskService.findTask(taskId);
+        boolean isHirerOwner = task.getHirer() != null && task.getHirer().getId().equals(currentUser.getId());
+        boolean isAssignedStudent = task.getAssignedTo() != null && task.getAssignedTo().getId().equals(currentUser.getId());
+        if (!isHirerOwner && !isAssignedStudent) {
+            throw TaskHubException.forbidden("Not allowed to view latest submission result");
+        }
+
+        SubmissionResponse latestSubmission = submissionRepo.findTopByTaskIdOrderBySubmittedAtDesc(taskId)
+                .map(this::toResponse)
+                .orElse(null);
+        int revisionCount = currentRevisionCount(task, taskId);
+        List<RevisionRequestResponse> revisionHistory = revisionRequestRepo.findByTaskIdOrderByCreatedAtAsc(taskId)
+                .stream()
+                .map(this::toRevisionResponse)
+                .toList();
+        RevisionRequestResponse latestRevision = revisionHistory.isEmpty()
+                ? null
+                : revisionHistory.get(revisionHistory.size() - 1);
+
+        return LatestSubmissionResultResponse.builder()
+                .taskId(task.getId())
+                .taskStatus(task.getStatus())
+                .latestSubmission(latestSubmission)
+                .submissionAIResult(fromAiResultJson(task.getSubmissionAIResultJson()))
+                .revisionCount(revisionCount)
+                .latestRevision(latestRevision)
+                .revisionHistory(revisionHistory)
+                .build();
+    }
+
+    @Transactional(readOnly = true)
+    public List<RevisionRequestResponse> getRevisionHistory(Long taskId) {
+        User currentUser = AuthUtil.getCurrentUser();
+        Task task = taskService.findTask(taskId);
+        boolean isHirerOwner = task.getHirer() != null && task.getHirer().getId().equals(currentUser.getId());
+        boolean isAssignedStudent = task.getAssignedTo() != null && task.getAssignedTo().getId().equals(currentUser.getId());
+        if (!isHirerOwner && !isAssignedStudent) {
+            throw TaskHubException.forbidden("Not allowed to view revision history");
+        }
+
+        return revisionRequestRepo.findByTaskIdOrderByCreatedAtAsc(taskId)
+                .stream()
+                .map(this::toRevisionResponse)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public String generateDisputeReport(Long taskId) {
         Task task = taskService.findTask(taskId);
         List<Submission> subs = submissionRepo.findByTaskId(taskId);
-        if (subs.isEmpty()) throw TaskHubException.badRequest("No submissions found");
+        if (subs.isEmpty()) {
+            throw TaskHubException.badRequest("No submissions found");
+        }
 
         Submission latest = subs.get(subs.size() - 1);
         List<String> criteria = task.getAcceptanceCriteria().stream()
-                .map(AcceptanceCriteria::getDescription).toList();
+                .map(AcceptanceCriteria::getDescription)
+                .toList();
         return aiValidation.generateDisputeReport(latest.getNotes(), criteria);
     }
 
     private SubmissionResponse toResponse(Submission s) {
-        // Mapping entity -> DTO để trả về client.
         return SubmissionResponse.builder()
-                .id(s.getId()).taskId(s.getTask().getId())
-                .studentId(s.getStudent().getId()).studentName(s.getStudent().getFullName())
-                .fileUrl(s.getFileUrl()).notes(s.getNotes())
-                .aiScore(s.getAiScore()).aiReport(s.getAiReport())
-                .isRevision(s.getIsRevision()).submittedAt(s.getSubmittedAt()).build();
+                .id(s.getId())
+                .taskId(s.getTask().getId())
+                .studentId(s.getStudent().getId())
+                .studentName(s.getStudent().getFullName())
+                .fileUrl(s.getFileUrl())
+                .submittedFiles(fromJson(s.getSubmittedFilesJson()))
+                .notes(s.getNotes())
+                .aiScore(s.getAiScore())
+                .aiReport(s.getAiReport())
+                .isRevision(s.getIsRevision())
+                .submittedAt(s.getSubmittedAt())
+                .build();
+    }
+
+    private RevisionRequestResponse toRevisionResponse(com.taskhub.entity.RevisionRequest revision) {
+        return RevisionRequestResponse.builder()
+                .id(revision.getId())
+                .taskId(revision.getTask().getId())
+                .submissionId(revision.getSubmission() != null ? revision.getSubmission().getId() : null)
+                .requestedById(revision.getRequestedBy().getId())
+                .studentId(revision.getStudent().getId())
+                .revisionNumber(revision.getRevisionNumber())
+                .reason(revision.getReason())
+                .description(revision.getDescription())
+                .aiSuggestions(fromRevisionSuggestionsJson(revision.getAiSuggestionsJson()))
+                .createdAt(revision.getCreatedAt())
+                .build();
+    }
+
+    private List<RevisionSuggestionResponse> buildRevisionSuggestions(SubmissionAIResult aiResult) {
+        if (aiResult.getCriteriaResults() == null) {
+            return List.of();
+        }
+        return aiResult.getCriteriaResults().stream()
+                .filter(result -> result.getStatus() != null)
+                .filter(result -> "PARTIAL".equalsIgnoreCase(result.getStatus())
+                        || "FAILED".equalsIgnoreCase(result.getStatus()))
+                .map(this::toRevisionSuggestion)
+                .toList();
+    }
+
+    private RevisionSuggestionResponse toRevisionSuggestion(CriteriaAIResult result) {
+        return RevisionSuggestionResponse.builder()
+                .index(result.getIndex())
+                .criteria(result.getCriteria())
+                .status(result.getStatus())
+                .suggestion(result.getSuggestion())
+                .build();
+    }
+
+    private int currentRevisionCount(Task task, Long taskId) {
+        int taskRevisionCount = task.getRevisionCount() == null ? 0 : task.getRevisionCount();
+        long persistedRevisionCount = revisionRequestRepo.countByTaskId(taskId);
+        return (int) Math.max(taskRevisionCount, persistedRevisionCount);
+    }
+
+    private void clearLatestPrecheck(Task task) {
+        task.setSubmissionAIResultJson(null);
+        task.setLatestPrecheckAt(null);
+        task.setPrecheckStudentId(null);
+        task.setPrecheckCanSubmit(null);
+        task.setPrecheckSubmittedFilePathsJson(null);
+    }
+
+    private List<SubmittedFileDto> normalizeSubmittedFiles(SubmissionRequest req, Long taskId, Long currentUserId) {
+        if (req.getSubmittedFiles() == null || req.getSubmittedFiles().isEmpty()) {
+            return List.of();
+        }
+
+        List<SubmittedFileDto> files = new ArrayList<>();
+        for (SubmittedFileDto file : req.getSubmittedFiles()) {
+            validateSubmittedFile(file, taskId, currentUserId);
+            files.add(file);
+        }
+        return files;
+    }
+
+    private void validateSubmittedFile(SubmittedFileDto file, Long taskId, Long currentUserId) {
+        if (file == null) {
+            throw TaskHubException.badRequest("submittedFiles contains an empty file metadata item");
+        }
+        if (isBlank(file.getFileName())) {
+            throw TaskHubException.badRequest("submittedFiles.fileName is required");
+        }
+        if (isBlank(file.getPath())) {
+            throw TaskHubException.badRequest("submittedFiles.path is required");
+        }
+        if (file.getPath().contains("../") || file.getPath().contains("..\\")) {
+            throw TaskHubException.badRequest("submittedFiles.path must not contain path traversal");
+        }
+
+        String taskPrefix = "submissions/task-" + taskId + "/";
+        if (!file.getPath().startsWith(taskPrefix)) {
+            throw TaskHubException.badRequest("submittedFiles.path must start with " + taskPrefix);
+        }
+        if (!file.getPath().contains("/user-" + currentUserId + "/")) {
+            throw TaskHubException.badRequest("submittedFiles.path must belong to the current user");
+        }
+
+        String contentType = file.getContentType();
+        if (contentType == null || !FileUploadValidator.ALLOWED_CONTENT_TYPES.contains(contentType.toLowerCase(Locale.ROOT))) {
+            throw TaskHubException.badRequest("Unsupported submittedFiles.contentType: " + contentType);
+        }
+        if (file.getSize() == null || file.getSize() <= 0 || file.getSize() > FileUploadValidator.MAX_FILE_SIZE_BYTES) {
+            throw TaskHubException.badRequest("submittedFiles.size must be greater than 0 and not exceed 20MB");
+        }
+    }
+
+    private String buildSubmissionSummary(String notes, List<SubmittedFileDto> submittedFiles, String legacyFileUrl) {
+        StringBuilder summary = new StringBuilder();
+        if (notes != null) {
+            summary.append(notes).append(' ');
+        }
+        if (legacyFileUrl != null) {
+            summary.append(legacyFileUrl).append(' ');
+        }
+        for (SubmittedFileDto file : submittedFiles) {
+            summary.append(file.getFileName()).append(' ')
+                    .append(file.getPath()).append(' ')
+                    .append(file.getContentType()).append(' ');
+        }
+        return summary.toString();
+    }
+
+    private String toJson(List<SubmittedFileDto> submittedFiles) {
+        try {
+            return objectMapper.writeValueAsString(submittedFiles);
+        } catch (JsonProcessingException ex) {
+            throw TaskHubException.internalError("Cannot serialize submitted files");
+        }
+    }
+
+    private String toJsonStringList(List<String> values) {
+        try {
+            return objectMapper.writeValueAsString(values);
+        } catch (JsonProcessingException ex) {
+            throw TaskHubException.internalError("Cannot serialize precheck file paths");
+        }
+    }
+
+    private String toJson(SubmissionAIResult result) {
+        try {
+            return objectMapper.writeValueAsString(result);
+        } catch (JsonProcessingException ex) {
+            throw TaskHubException.internalError("Cannot serialize submission AI result");
+        }
+    }
+
+    private String toRevisionSuggestionsJson(List<RevisionSuggestionResponse> suggestions) {
+        try {
+            return objectMapper.writeValueAsString(suggestions);
+        } catch (JsonProcessingException ex) {
+            throw TaskHubException.internalError("Cannot serialize revision suggestions");
+        }
+    }
+
+    private SubmissionAIResult fromAiResultJson(String json) {
+        if (isBlank(json)) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(json, SubmissionAIResult.class);
+        } catch (JsonProcessingException ex) {
+            throw TaskHubException.internalError("Cannot parse submission AI result");
+        }
+    }
+
+    private List<String> fromStringListJson(String json) {
+        if (isBlank(json)) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(json, new TypeReference<List<String>>() {});
+        } catch (JsonProcessingException ex) {
+            throw TaskHubException.internalError("Cannot parse precheck file paths");
+        }
+    }
+
+    private List<RevisionSuggestionResponse> fromRevisionSuggestionsJson(String json) {
+        if (isBlank(json)) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(json, new TypeReference<List<RevisionSuggestionResponse>>() {});
+        } catch (JsonProcessingException ex) {
+            throw TaskHubException.internalError("Cannot parse revision suggestions");
+        }
+    }
+
+    private List<SubmittedFileDto> fromJson(String json) {
+        if (isBlank(json)) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(json, new TypeReference<List<SubmittedFileDto>>() {});
+        } catch (JsonProcessingException ex) {
+            throw TaskHubException.internalError("Cannot parse submitted files");
+        }
+    }
+
+    private void validateLatestPrecheckForSubmit(Task task, User student, List<SubmittedFileDto> submittedFiles) {
+        SubmissionAIResult latestPrecheck = fromAiResultJson(task.getSubmissionAIResultJson());
+        if (latestPrecheck == null || task.getPrecheckStudentId() == null) {
+            throw TaskHubException.badRequest("Precheck is required before submission");
+        }
+        if (!task.getPrecheckStudentId().equals(student.getId())) {
+            throw TaskHubException.badRequest("Precheck is required before submission");
+        }
+        boolean canSubmit = Boolean.TRUE.equals(task.getPrecheckCanSubmit()) && latestPrecheck.isCanSubmit();
+        if (!canSubmit) {
+            throw TaskHubException.badRequest("Latest precheck does not allow submission");
+        }
+
+        List<String> precheckPaths = fromStringListJson(task.getPrecheckSubmittedFilePathsJson());
+        List<String> submitPaths = extractSortedPaths(submittedFiles);
+        if (!precheckPaths.equals(submitPaths)) {
+            throw TaskHubException.badRequest("Submitted files changed after precheck. Please run precheck again.");
+        }
+    }
+
+    private int calculatePrecheckScore(SubmissionAIResult latestPrecheck) {
+        if (latestPrecheck == null || latestPrecheck.getCriteriaResults() == null || latestPrecheck.getCriteriaResults().isEmpty()) {
+            return 0;
+        }
+        long metCount = latestPrecheck.getCriteriaResults().stream()
+                .filter(result -> "MET".equalsIgnoreCase(result.getStatus()))
+                .count();
+        return (int) ((metCount * 100.0) / latestPrecheck.getCriteriaResults().size());
+    }
+
+    private List<String> extractSortedPaths(List<SubmittedFileDto> files) {
+        if (files == null || files.isEmpty()) {
+            return List.of();
+        }
+        return files.stream()
+                .map(SubmittedFileDto::getPath)
+                .sorted(Comparator.nullsLast(String::compareTo))
+                .toList();
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 }

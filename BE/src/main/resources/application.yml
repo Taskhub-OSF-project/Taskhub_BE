@@ -3,7 +3,11 @@ spring:
     name: taskhub-backend
   profiles:
     # Local run: H2 in-memory (no SQL Server required). Use profile sqlserver when DB is ready.
-    active: ${SPRING_PROFILES_ACTIVE:dev}
+    active: ${SPRING_PROFILES_ACTIVE:sqlserver}
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 20MB
 
 server:
   port: ${PORT:${SERVER_PORT:8080}}
@@ -19,3 +23,8 @@ springdoc:
     display-request-duration: true
   api-docs:
     path: /v3/api-docs
+supabase:
+  url: ${SUPABASE_URL:}
+  service-role-key: ${SUPABASE_SERVICE_ROLE_KEY:}
+  storage:
+    bucket: ${SUPABASE_STORAGE_BUCKET:taskhub-submissions}

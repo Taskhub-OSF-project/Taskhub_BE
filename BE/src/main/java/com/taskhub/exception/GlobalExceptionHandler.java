@@ -2,8 +2,12 @@ package com.taskhub.exception;
 
 import com.taskhub.dto.response.ApiResponse;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
 /**
  * Handler chuẩn hóa response lỗi cho toàn bộ API.
@@ -30,6 +34,20 @@ public class GlobalExceptionHandler {
                 .map(e -> e.getField() + ": " + e.getDefaultMessage())
                 .reduce((a, b) -> a + "; " + b).orElse("Validation failed");
         return ResponseEntity.badRequest().body(ApiResponse.error(msg));
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMaxUploadSize(MaxUploadSizeExceededException ex) {
+        return ResponseEntity.badRequest().body(ApiResponse.error("File size must not exceed 20MB"));
+    }
+
+    @ExceptionHandler({
+            MultipartException.class,
+            MissingServletRequestPartException.class,
+            MissingServletRequestParameterException.class
+    })
+    public ResponseEntity<ApiResponse<Void>> handleMultipart(Exception ex) {
+        return ResponseEntity.badRequest().body(ApiResponse.error("Invalid multipart request"));
     }
 
     /**
