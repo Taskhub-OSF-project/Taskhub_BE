@@ -18,7 +18,7 @@ public enum TaskStatus {
             case ACTIVE -> next == IN_PROGRESS;
             case IN_PROGRESS -> next == SUBMITTED;
             case SUBMITTED -> next == COMPLETED || next == DISPUTED || next == IN_PROGRESS;
-            case DISPUTED -> next == IN_PROGRESS || next == LOCKED;
+            case DISPUTED -> next == IN_PROGRESS || next == LOCKED || next == COMPLETED;
             case COMPLETED -> false;
         };
     }

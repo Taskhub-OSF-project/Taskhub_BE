@@ -68,6 +68,15 @@ public class Task {
     @Column(nullable = false, columnDefinition = "INT DEFAULT 0")
     private Integer revisionCount = 0;
 
+    @Column(columnDefinition = "NVARCHAR(500)")
+    private String disputeReason;
+
+    @Column(columnDefinition = "NVARCHAR(MAX)")
+    private String disputeDescription;
+
+    @Column(columnDefinition = "NVARCHAR(MAX)")
+    private String disputeAiReportJson;
+
     @PreUpdate
     public void onUpdate() { this.updatedAt = LocalDateTime.now(); }
 }
