@@ -99,6 +99,23 @@ public class WalletService {
     }
 
     /**
+     * Rút tiền từ ví (dev/demo).
+     */
+    @Transactional
+    public WalletResponse withdraw(BigDecimal amount) {
+        if (amount.compareTo(BigDecimal.ZERO) <= 0)
+            throw TaskHubException.badRequest("Amount must be positive");
+        User user = AuthUtil.getCurrentUser();
+        if (user.getWalletBalance().compareTo(amount) < 0) {
+            throw TaskHubException.badRequest("Số dư ví không đủ để rút");
+        }
+        user.setWalletBalance(user.getWalletBalance().subtract(amount));
+        userRepository.save(user);
+        recordTransaction(user, WalletTransactionType.withdrawal, amount.negate(), null);
+        return new WalletResponse(user.getWalletBalance());
+    }
+
+    /**
      * Ghi một dòng ledger cho giao dịch ví.
      */
     public void recordTransaction(User user, WalletTransactionType type, BigDecimal amount, Task task) {

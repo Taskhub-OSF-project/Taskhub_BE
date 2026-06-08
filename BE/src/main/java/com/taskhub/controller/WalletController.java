@@ -39,6 +39,11 @@ public class WalletController {
         return ResponseEntity.ok(ApiResponse.ok("Deposit successful", walletService.deposit(amount)));
     }
 
+    @PostMapping("/withdraw")
+    public ResponseEntity<ApiResponse<WalletResponse>> withdraw(@RequestParam BigDecimal amount) {
+        return ResponseEntity.ok(ApiResponse.ok("Withdraw successful", walletService.withdraw(amount)));
+    }
+
     @GetMapping("/transactions")
     public ResponseEntity<ApiResponse<List<WalletTransactionResponse>>> transactions() {
         return ResponseEntity.ok(ApiResponse.ok(walletService.getTransactions()));
