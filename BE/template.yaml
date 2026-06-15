@@ -1,0 +1,72 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: TaskHub Spring Boot backend on AWS Lambda and API Gateway
+
+Parameters:
+  SpringDatasourcePassword:
+    Type: String
+    NoEcho: true
+    Description: Supabase database password
+  AppJwtSecret:
+    Type: String
+    NoEcho: true
+    MinLength: 32
+    Description: JWT signing secret, minimum 32 characters
+  SupabaseUrl:
+    Type: String
+    Default: ''
+    Description: Optional Supabase project URL for Storage integration
+  SupabaseServiceRoleKey:
+    Type: String
+    NoEcho: true
+    Default: ''
+    Description: Optional Supabase service role key for Storage integration
+
+Globals:
+  Function:
+    Runtime: java21
+    Architectures:
+      - x86_64
+    MemorySize: 3008
+    Timeout: 30
+    Tracing: Active
+
+Resources:
+  TaskHubBackendFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: taskhub-backend
+      CodeUri: target/taskhub-backend-1.0.0-lambda.jar
+      Handler: com.taskhub.lambda.StreamLambdaHandler::handleRequest
+      Environment:
+        Variables:
+          SPRING_PROFILES_ACTIVE: supabase
+          SPRING_DATASOURCE_URL: jdbc:postgresql://aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require
+          SPRING_DATASOURCE_USERNAME: postgres.wwduzspwejdyvbnjxkkz
+          SPRING_DATASOURCE_PASSWORD: !Ref SpringDatasourcePassword
+          SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+          SPRING_JPA_SHOW_SQL: 'false'
+          SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: '2'
+          SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: '0'
+          SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT: '30000'
+          JAVA_TOOL_OPTIONS: -XX:+TieredCompilation -XX:TieredStopAtLevel=1
+          TZ: Asia/Ho_Chi_Minh
+          APP_JWT_SECRET: !Ref AppJwtSecret
+          SUPABASE_URL: !Ref SupabaseUrl
+          SUPABASE_SERVICE_ROLE_KEY: !Ref SupabaseServiceRoleKey
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+        RootApi:
+          Type: Api
+          Properties:
+            Path: /
+            Method: ANY
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/'

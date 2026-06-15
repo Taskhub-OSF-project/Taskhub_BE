@@ -1,0 +1,11 @@
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "taskhub-backend"
+region = "ap-southeast-1"
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = true
+resolve_s3 = true
+s3_prefix = "taskhub-backend"
+disable_rollback = false
+parameter_overrides = "SupabaseUrl=\"\" SupabaseServiceRoleKey=\"\""

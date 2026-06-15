@@ -14,8 +14,8 @@ public class StartupLogger {
         System.out.println();
         System.out.println("========================================");
         System.out.println("TaskHub Backend ready");
-        System.out.println("➜  Local:   " + baseUrl + "/");
-        System.out.println("➜  Swagger: " + baseUrl + "/swagger-ui.html");
+        System.out.println("Local:   " + baseUrl + "/");
+        System.out.println("Swagger: " + baseUrl + "/swagger-ui.html");
         System.out.println("========================================");
         System.out.println();
     }

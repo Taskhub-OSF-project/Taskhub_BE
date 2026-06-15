@@ -15,10 +15,10 @@ public class Task {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false,columnDefinition = "NVARCHAR(255)")
+    @Column(nullable = false, length = 255)
     private String title;
 
-    @Column(columnDefinition = "NVARCHAR(MAX)", nullable = false)
+    @Column(columnDefinition = "TEXT", nullable = false)
     private String description;
 
     @Column(length = 100)
@@ -52,7 +52,7 @@ public class Task {
 
     private LocalDateTime updatedAt;
 
-    @Column(columnDefinition = "NVARCHAR(MAX)")
+    @Column(columnDefinition = "TEXT")
     private String submissionAIResultJson;
 
     private LocalDateTime latestPrecheckAt;
@@ -61,20 +61,20 @@ public class Task {
 
     private Boolean precheckCanSubmit;
 
-    @Column(columnDefinition = "NVARCHAR(MAX)")
+    @Column(columnDefinition = "TEXT")
     private String precheckSubmittedFilePathsJson;
 
     @Builder.Default
     @Column(nullable = false, columnDefinition = "INT DEFAULT 0")
     private Integer revisionCount = 0;
 
-    @Column(columnDefinition = "NVARCHAR(500)")
+    @Column(length = 500)
     private String disputeReason;
 
-    @Column(columnDefinition = "NVARCHAR(MAX)")
+    @Column(columnDefinition = "TEXT")
     private String disputeDescription;
 
-    @Column(columnDefinition = "NVARCHAR(MAX)")
+    @Column(columnDefinition = "TEXT")
     private String disputeAiReportJson;
 
     @PreUpdate
