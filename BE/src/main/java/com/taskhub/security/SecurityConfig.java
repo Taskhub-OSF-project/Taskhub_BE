@@ -1,6 +1,7 @@
 package com.taskhub.security;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -18,20 +19,17 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import java.util.List;
 
-/**
- * Cấu hình Spring Security cho toàn bộ hệ thống.
- * Thuộc module Security, thiết lập JWT, CORS và quyền truy cập.
- */
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
 @RequiredArgsConstructor
 public class SecurityConfig {
     private final JwtAuthFilter jwtAuthFilter;
+    private final RateLimitFilter rateLimitFilter;
 
-    /**
-     * Khai báo filter chain dùng JWT và chặn session stateful.
-     */
+    @Value("${spring.profiles.active:dev}")
+    private String activeProfile;
+
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         return http
@@ -41,21 +39,31 @@ public class SecurityConfig {
                 .headers(h -> h.frameOptions(f -> f.sameOrigin()))
                 .authorizeHttpRequests(a -> a
                         .requestMatchers("/api/files/**").authenticated()
-                        .requestMatchers(
-                                "/",
-                                "/error",
-                                "/h2-console/**",
-                                "/swagger-ui.html",
-                                "/swagger-ui/**",
-                                "/v3/api-docs/**",
-                                "/v3/api-docs/swagger-config",
-                                "/api/health",
-                                "/api/auth/**"
-                        ).permitAll()
+                        .requestMatchers(getPublicMatchers())
+                        .permitAll()
                         .anyRequest().authenticated())
-                // JWT filter chạy trước filter đăng nhập mặc định.
+                .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();
+    }
+
+    private String[] getPublicMatchers() {
+        List<String> matchers = List.of(
+                "/",
+                "/error",
+                "/swagger-ui.html",
+                "/swagger-ui/**",
+                "/v3/api-docs/**",
+                "/v3/api-docs/swagger-config",
+                "/api/health",
+                "/api/auth/**"
+        );
+        // H2 console only in dev profile
+        if ("dev".equals(activeProfile)) {
+            matchers = new java.util.ArrayList<>(matchers);
+            ((java.util.ArrayList<String>) matchers).add("/h2-console/**");
+        }
+        return matchers.toArray(new String[0]);
     }
 
     @Bean public PasswordEncoder passwordEncoder() { return new BCryptPasswordEncoder(); }
@@ -67,9 +75,10 @@ public class SecurityConfig {
     private CorsConfigurationSource corsSource() {
         var config = new CorsConfiguration();
         config.setAllowedOriginPatterns(List.of("*"));
-        config.setAllowedMethods(List.of("*"));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
-        config.setAllowCredentials(false);
+        config.setExposedHeaders(List.of("Authorization"));
+        config.setMaxAge(3600L);
         var source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
         return source;

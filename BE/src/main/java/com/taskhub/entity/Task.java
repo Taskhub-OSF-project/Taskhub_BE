@@ -77,6 +77,24 @@ public class Task {
     @Column(columnDefinition = "TEXT")
     private String disputeAiReportJson;
 
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "task_skills_required", joinColumns = @JoinColumn(name = "task_id"))
+    @Column(name = "skill")
+    @Builder.Default
+    private List<String> skillsRequired = new ArrayList<>();
+
+    @Column(name = "applicant_count", nullable = false)
+    @Builder.Default
+    private Integer applicantCount = 0;
+
+    @Column(name = "view_count", nullable = false)
+    @Builder.Default
+    private Integer viewCount = 0;
+
+    @Column(name = "is_featured", nullable = false)
+    @Builder.Default
+    private Boolean isFeatured = false;
+
     @PreUpdate
     public void onUpdate() { this.updatedAt = LocalDateTime.now(); }
 }

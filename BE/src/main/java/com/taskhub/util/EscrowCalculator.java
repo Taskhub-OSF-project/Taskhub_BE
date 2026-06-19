@@ -5,6 +5,7 @@ import java.math.RoundingMode;
 
 public final class EscrowCalculator {
     public static final BigDecimal PLATFORM_FEE_RATE = new BigDecimal("0.05");
+    public static final BigDecimal PLATFORM_FEE_PERCENT = new BigDecimal("5");
 
     private EscrowCalculator() {}
 
@@ -14,5 +15,9 @@ public final class EscrowCalculator {
 
     public static BigDecimal totalEscrowDeduction(BigDecimal budget) {
         return budget.add(platformFee(budget));
+    }
+
+    public static BigDecimal getPlatformFeePercent() {
+        return PLATFORM_FEE_PERCENT;
     }
 }

@@ -1,5 +1,7 @@
 package com.taskhub.service;
 
+import com.taskhub.dto.PageRequestDto;
+import com.taskhub.dto.PageResponse;
 import com.taskhub.dto.request.ApplicationRequest;
 import com.taskhub.dto.response.ApplicationResponse;
 import com.taskhub.dto.response.TaskResponse;
@@ -9,29 +11,23 @@ import com.taskhub.exception.TaskHubException;
 import com.taskhub.repository.*;
 import com.taskhub.security.AuthUtil;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
-/**
- * Service xử lý nghiệp vụ ứng tuyển task.
- * Thuộc module Application, được gọi từ ApplicationController.
- */
+
 @Service
 @RequiredArgsConstructor
 public class ApplicationService {
     private final TaskApplicationRepository appRepo;
     private final TaskRepository taskRepo;
     private final TaskService taskService;
+    private final NotificationService notificationService;
 
-    /**
-     * Student apply vào một task đang ACTIVE.
-     * Input: taskId và ApplicationRequest.
-     * Output: ApplicationResponse vừa tạo.
-     */
     @Transactional
     public ApplicationResponse apply(Long taskId, ApplicationRequest req) {
         User student = AuthUtil.getCurrentUser();
-        // Chỉ STUDENT được apply.
         if (student.getRole() != Role.STUDENT)
             throw TaskHubException.forbidden("Only students can apply");
 
@@ -43,13 +39,22 @@ public class ApplicationService {
 
         TaskApplication app = TaskApplication.builder()
                 .task(task).student(student).coverLetter(req.getCoverLetter()).build();
-        return toResponse(appRepo.save(app));
+        app = appRepo.save(app);
+
+        // Increment applicant count on task
+        task.setApplicantCount((task.getApplicantCount() != null ? task.getApplicantCount() : 0) + 1);
+        taskRepo.save(task);
+
+        // Notify hirer of new application
+        notificationService.notifyApplicationReceived(
+                task.getHirer().getId(),
+                student.getFullName(),
+                task.getTitle(),
+                taskId);
+
+        return toResponse(app);
     }
 
-    /**
-     * Hirer chấp nhận một application.
-     * Rule: task -> IN_PROGRESS, assign student, các đơn khác REJECTED.
-     */
     @Transactional
     public void acceptApplication(Long applicationId) {
         User hirer = AuthUtil.getCurrentUser();
@@ -57,7 +62,6 @@ public class ApplicationService {
                 .orElseThrow(() -> TaskHubException.notFound("Application not found"));
         Task task = app.getTask();
 
-        // Chỉ hirer owner được chấp nhận.
         if (!task.getHirer().getId().equals(hirer.getId()))
             throw TaskHubException.forbidden("Not your task");
         if (task.getStatus() != TaskStatus.ACTIVE)
@@ -70,30 +74,43 @@ public class ApplicationService {
         taskService.transition(task, TaskStatus.IN_PROGRESS);
         taskRepo.save(task);
 
-        // Từ chối các đơn còn lại để tránh nhiều assignee.
+        // Notify student they were accepted
+        notificationService.notifyTaskAssigned(app.getStudent().getId(), task.getTitle(), task.getId());
+        notificationService.notifyApplicationAccepted(app.getStudent().getId(), task.getTitle(), task.getId());
+
+        // Reject other applications
         appRepo.findByTaskId(task.getId()).stream()
                 .filter(a -> !a.getId().equals(applicationId))
                 .forEach(a -> { a.setStatus(ApplicationStatus.REJECTED); appRepo.save(a); });
     }
 
-    /**
-     * Danh sách application của một task.
-     */
-    public List<ApplicationResponse> getTaskApplications(Long taskId) {
-        return appRepo.findByTaskId(taskId).stream().map(this::toResponse).toList();
+    public PageResponse<ApplicationResponse> getTaskApplications(Long taskId, PageRequestDto pageReq) {
+        Page< TaskApplication> page = appRepo.findByTaskId(taskId,
+                org.springframework.data.domain.PageRequest.of(pageReq.getPage(), Math.min(pageReq.getSize(), 100),
+                        Sort.by(Sort.Direction.DESC, "appliedAt")));
+        return PageResponse.<ApplicationResponse>builder()
+                .content(page.getContent().stream().map(this::toResponse).toList())
+                .page(page.getNumber()).size(page.getSize())
+                .totalElements(page.getTotalElements()).totalPages(page.getTotalPages())
+                .first(page.isFirst()).last(page.isLast())
+                .hasNext(page.hasNext()).hasPrevious(page.hasPrevious())
+                .build();
     }
 
-    /**
-     * Danh sách application của student hiện tại.
-     */
-    public List<ApplicationResponse> getMyApplications() {
-        return appRepo.findByStudentId(AuthUtil.getCurrentUser().getId())
-                .stream().map(this::toResponse).toList();
+    public PageResponse<ApplicationResponse> getMyApplications(PageRequestDto pageReq) {
+        User student = AuthUtil.getCurrentUser();
+        Page<TaskApplication> page = appRepo.findByStudentId(student.getId(),
+                org.springframework.data.domain.PageRequest.of(pageReq.getPage(), Math.min(pageReq.getSize(), 100),
+                        Sort.by(Sort.Direction.DESC, "appliedAt")));
+        return PageResponse.<ApplicationResponse>builder()
+                .content(page.getContent().stream().map(this::toResponse).toList())
+                .page(page.getNumber()).size(page.getSize())
+                .totalElements(page.getTotalElements()).totalPages(page.getTotalPages())
+                .first(page.isFirst()).last(page.isLast())
+                .hasNext(page.hasNext()).hasPrevious(page.hasPrevious())
+                .build();
     }
 
-    /**
-     * Danh sách task đã apply nhưng chưa được chọn (PENDING).
-     */
     public List<TaskResponse> getMyAppliedTasks() {
         User student = AuthUtil.getCurrentUser();
         if (student.getRole() != Role.STUDENT)
@@ -106,7 +123,6 @@ public class ApplicationService {
     }
 
     private ApplicationResponse toResponse(TaskApplication a) {
-        // Mapping entity -> DTO, không expose User entity trực tiếp.
         return ApplicationResponse.builder()
                 .id(a.getId()).taskId(a.getTask().getId())
                 .studentId(a.getStudent().getId()).studentName(a.getStudent().getFullName())

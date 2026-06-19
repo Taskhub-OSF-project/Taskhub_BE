@@ -1,5 +1,6 @@
 package com.taskhub;
 
+import com.taskhub.dto.PageRequestDto;
 import com.taskhub.dto.request.PatchTaskRequest;
 import com.taskhub.entity.Task;
 import com.taskhub.entity.TaskApplication;
@@ -99,9 +100,9 @@ class Phase2TaskApplicationTests {
         createTask(hirer, TaskStatus.ACTIVE);
         setAuth(hirer);
 
-        var results = taskService.getMyTasks("DRAFT");
-        assertEquals(1, results.size());
-        assertEquals(TaskStatus.DRAFT, results.get(0).getStatus());
+        var results = taskService.getMyTasks("DRAFT", PageRequestDto.builder().page(0).size(20).build());
+        assertEquals(1, results.getContent().size());
+        assertEquals(TaskStatus.DRAFT, results.getContent().get(0).getStatus());
     }
 
     @Test

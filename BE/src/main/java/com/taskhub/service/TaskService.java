@@ -1,5 +1,7 @@
 package com.taskhub.service;
 
+import com.taskhub.dto.PageRequestDto;
+import com.taskhub.dto.PageResponse;
 import com.taskhub.dto.request.CreateTaskRequest;
 import com.taskhub.dto.response.*;
 import com.taskhub.entity.*;
@@ -9,14 +11,16 @@ import com.taskhub.repository.*;
 import com.taskhub.security.AuthUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
 import java.util.List;
 
 @Service
 @RequiredArgsConstructor
-@Slf4j // Add proper logger
+@Slf4j
 public class TaskService {
     private final TaskRepository taskRepository;
     private final AiValidationService aiValidation;
@@ -54,25 +58,73 @@ public class TaskService {
         return toResponse(task, includeApplicants);
     }
 
-    public List<TaskResponse> getMyTasks(String status) {
+    public PageResponse<TaskResponse> getMyTasks(String status, PageRequestDto pageReq) {
         User user = AuthUtil.getCurrentUser();
         TaskStatus filter = parseStatus(status);
         boolean isHirer = user.getRole() == Role.HIRER;
 
-        List<Task> tasks = isHirer
-                ? (filter == null ? taskRepository.findByHirerId(user.getId())
-                : taskRepository.findByHirerIdAndStatus(user.getId(), filter))
-                : (filter == null ? taskRepository.findByAssignedToId(user.getId())
-                : taskRepository.findByAssignedToIdAndStatus(user.getId(), filter));
+        PageRequest springPage = pageReq.toSpringPageRequest();
+        Page<Task> taskPage;
 
-        return tasks.stream()
-                .map(t -> toResponse(t, isHirer))
-                .toList();
+        if (isHirer) {
+            taskPage = filter == null
+                    ? taskRepository.findByHirerId(user.getId(), springPage)
+                    : taskRepository.findByHirerIdAndStatus(user.getId(), filter, springPage);
+        } else {
+            taskPage = filter == null
+                    ? taskRepository.findByAssignedToId(user.getId(), springPage)
+                    : taskRepository.findByAssignedToIdAndStatus(user.getId(), filter, springPage);
+        }
+
+        return PageResponse.<TaskResponse>builder()
+                .content(taskPage.getContent().stream().map(t -> toResponse(t, isHirer)).toList())
+                .page(taskPage.getNumber())
+                .size(taskPage.getSize())
+                .totalElements(taskPage.getTotalElements())
+                .totalPages(taskPage.getTotalPages())
+                .first(taskPage.isFirst())
+                .last(taskPage.isLast())
+                .hasNext(taskPage.hasNext())
+                .hasPrevious(taskPage.hasPrevious())
+                .build();
     }
 
-    public List<TaskResponse> getAvailableTasks() {
-        return taskRepository.findByStatusIn(List.of(TaskStatus.ACTIVE))
-                .stream().map(this::toResponse).toList();
+    public PageResponse<TaskResponse> getAvailableTasks(PageRequestDto pageReq) {
+        User user = AuthUtil.getCurrentUser();
+        PageRequest springPage = PageRequest.of(pageReq.getPage(), Math.min(pageReq.getSize(), 100),
+                Sort.by(Sort.Direction.DESC, "createdAt"));
+        Page<Task> taskPage = taskRepository.findAvailableTasks(
+                List.of(TaskStatus.ACTIVE), user.getId(), springPage);
+        return PageResponse.<TaskResponse>builder()
+                .content(taskPage.getContent().stream().map(this::toResponse).toList())
+                .page(taskPage.getNumber())
+                .size(taskPage.getSize())
+                .totalElements(taskPage.getTotalElements())
+                .totalPages(taskPage.getTotalPages())
+                .first(taskPage.isFirst())
+                .last(taskPage.isLast())
+                .hasNext(taskPage.hasNext())
+                .hasPrevious(taskPage.hasPrevious())
+                .build();
+    }
+
+    public PageResponse<TaskResponse> getAllTasks(String status, PageRequestDto pageReq) {
+        PageRequest springPage = PageRequest.of(pageReq.getPage(), Math.min(pageReq.getSize(), 100),
+                Sort.by(Sort.Direction.DESC, pageReq.getSortBy()));
+        Page<Task> taskPage;
+        TaskStatus filter = parseStatus(status);
+        if (filter != null) {
+            taskPage = taskRepository.findByStatusIn(List.of(filter), springPage);
+        } else {
+            taskPage = taskRepository.findAll(springPage);
+        }
+        return PageResponse.<TaskResponse>builder()
+                .content(taskPage.getContent().stream().map(this::toResponse).toList())
+                .page(taskPage.getNumber()).size(taskPage.getSize())
+                .totalElements(taskPage.getTotalElements()).totalPages(taskPage.getTotalPages())
+                .first(taskPage.isFirst()).last(taskPage.isLast())
+                .hasNext(taskPage.hasNext()).hasPrevious(taskPage.hasPrevious())
+                .build();
     }
 
     @Transactional
@@ -127,7 +179,6 @@ public class TaskService {
         taskRepository.delete(task);
     }
 
-    // SINGLE lockTask method - enhanced version only
     @Transactional
     public TaskResponse lockTask(Long taskId) {
         Task task = findOwnedTask(taskId);
@@ -136,10 +187,8 @@ public class TaskService {
         List<String> criteriaDescs = task.getAcceptanceCriteria().stream()
                 .map(AcceptanceCriteria::getDescription).toList();
 
-        // Enhanced AI validation
         var result = aiValidation.validateCriteriaEnhanced(criteriaDescs);
         if (!result.valid()) {
-            // Log validation failure with proper logger
             log.warn("Task lock failed for task {}: {}", taskId, result.message());
             throw TaskHubException.badRequest("Cannot lock: " + result.message());
         }
@@ -169,8 +218,6 @@ public class TaskService {
         return toResponse(taskRepository.save(task));
     }
 
-    // ===== Public helpers =====
-
     public Task findTask(Long id) {
         return taskRepository.findById(id)
                 .orElseThrow(() -> TaskHubException.notFound("Task not found"));
@@ -187,8 +234,6 @@ public class TaskService {
         validateTransition(task, next);
         task.setStatus(next);
     }
-
-    // ===== Private helpers =====
 
     public void validateTransition(Task task, TaskStatus next) {
         if (!task.getStatus().canTransitionTo(next))

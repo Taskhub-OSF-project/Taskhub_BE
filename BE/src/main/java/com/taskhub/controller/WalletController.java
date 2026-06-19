@@ -1,5 +1,7 @@
 package com.taskhub.controller;
 
+import com.taskhub.dto.PageRequestDto;
+import com.taskhub.dto.PageResponse;
 import com.taskhub.dto.response.*;
 import com.taskhub.config.OpenApiConfig;
 import com.taskhub.service.WalletService;
@@ -24,13 +26,9 @@ public class WalletController {
         return ResponseEntity.ok(ApiResponse.ok(walletService.getBalance()));
     }
 
-    /**
-     * Pre-check before create-task: sufficient balance for budget + 5% fee?
-     * FE: if !sufficient → redirect top-up with resumeFlow CREATE_TASK.
-     */
     @GetMapping("/readiness/create-task")
     public ResponseEntity<ApiResponse<WalletReadinessResponse>> createTaskReadiness(
-            @RequestParam java.math.BigDecimal budget) {
+            @RequestParam BigDecimal budget) {
         return ResponseEntity.ok(ApiResponse.ok(walletService.assessCreateTaskReadiness(budget)));
     }
 
@@ -47,5 +45,13 @@ public class WalletController {
     @GetMapping("/transactions")
     public ResponseEntity<ApiResponse<List<WalletTransactionResponse>>> transactions() {
         return ResponseEntity.ok(ApiResponse.ok(walletService.getTransactions()));
+    }
+
+    @GetMapping("/transactions/paged")
+    public ResponseEntity<ApiResponse<PageResponse<WalletTransactionResponse>>> transactionsPaged(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        PageRequestDto pageReq = PageRequestDto.builder().page(page).size(size).build();
+        return ResponseEntity.ok(ApiResponse.ok(walletService.getTransactionsPaged(pageReq)));
     }
 }

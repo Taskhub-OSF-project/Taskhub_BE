@@ -1,5 +1,7 @@
 package com.taskhub.controller;
 
+import com.taskhub.dto.PageRequestDto;
+import com.taskhub.dto.PageResponse;
 import com.taskhub.dto.request.ApplicationRequest;
 import com.taskhub.dto.response.ApiResponse;
 import com.taskhub.dto.response.ApplicationResponse;
@@ -9,13 +11,7 @@ import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
-
+import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
@@ -38,11 +34,9 @@ public class ApplicationController {
     @PostMapping("/task/{taskId}")
     public ResponseEntity<ApiResponse<ApplicationResponse>> apply(
             @PathVariable Long taskId,
-            @RequestBody ApplicationRequest req
-    ) {
+            @RequestBody ApplicationRequest req) {
         return ResponseEntity.ok(
-                ApiResponse.ok("Applied successfully", applicationService.apply(taskId, req))
-        );
+                ApiResponse.ok("Applied successfully", applicationService.apply(taskId, req)));
     }
 
     @PostMapping("/{id}/accept")
@@ -52,13 +46,20 @@ public class ApplicationController {
     }
 
     @GetMapping("/task/{taskId}")
-    public ResponseEntity<ApiResponse<List<ApplicationResponse>>> taskApps(@PathVariable Long taskId) {
-        return ResponseEntity.ok(ApiResponse.ok(applicationService.getTaskApplications(taskId)));
+    public ResponseEntity<ApiResponse<PageResponse<ApplicationResponse>>> taskApps(
+            @PathVariable Long taskId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        PageRequestDto pageReq = PageRequestDto.builder().page(page).size(size).build();
+        return ResponseEntity.ok(ApiResponse.ok(applicationService.getTaskApplications(taskId, pageReq)));
     }
 
     @GetMapping("/mine")
-    public ResponseEntity<ApiResponse<List<ApplicationResponse>>> myApps() {
-        return ResponseEntity.ok(ApiResponse.ok(applicationService.getMyApplications()));
+    public ResponseEntity<ApiResponse<PageResponse<ApplicationResponse>>> myApps(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        PageRequestDto pageReq = PageRequestDto.builder().page(page).size(size).build();
+        return ResponseEntity.ok(ApiResponse.ok(applicationService.getMyApplications(pageReq)));
     }
 
     @GetMapping("/my-applied-tasks")

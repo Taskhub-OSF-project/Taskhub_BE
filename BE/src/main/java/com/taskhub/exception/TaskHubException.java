@@ -46,6 +46,13 @@ public class TaskHubException extends RuntimeException {
     }
 
     /**
+     * 401 Unauthorized khi token không hợp lệ hoặc hết hạn.
+     */
+    public static TaskHubException unauthorized(String msg) {
+        return new TaskHubException(msg, HttpStatus.UNAUTHORIZED);
+    }
+
+    /**
      * 500 Internal Server Error cho lỗi hệ thống.
      */
     public static TaskHubException internalError(String msg) {

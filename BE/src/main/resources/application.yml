@@ -1,8 +1,7 @@
-spring:
+﻿spring:
   application:
     name: taskhub-backend
   profiles:
-    # Local run: H2 in-memory (no SQL Server required). Use profile sqlserver or supabase when DB is ready.
     active: ${SPRING_PROFILES_ACTIVE:dev}
   servlet:
     multipart:
@@ -16,6 +15,21 @@ app:
   jwt:
     secret: ${APP_JWT_SECRET:dev-only-default-secret-change-me-min-32-chars!!}
     expiration-ms: ${APP_JWT_EXPIRATION_MS:86400000}
+  refresh:
+    expiration-days: ${APP_REFRESH_EXPIRATION_DAYS:30}
+    max-per-user: ${APP_REFRESH_MAX_PER_USER:5}
+  base-url: ${APP_BASE_URL:http://localhost:5173}
+  email:
+    enabled: ${APP_EMAIL_ENABLED:false}
+
+spring.mail:
+  host: ${SPRING_MAIL_HOST:smtp.gmail.com}
+  port: ${SPRING_MAIL_PORT:587}
+  username: ${SPRING_MAIL_USERNAME:}
+  password: ${SPRING_MAIL_PASSWORD:}
+  properties:
+    mail.smtp.auth: true
+    mail.smtp.starttls.enable: true
 
 springdoc:
   swagger-ui:

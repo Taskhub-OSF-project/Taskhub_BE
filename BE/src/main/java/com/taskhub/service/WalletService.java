@@ -1,5 +1,7 @@
 package com.taskhub.service;
 
+import com.taskhub.dto.PageRequestDto;
+import com.taskhub.dto.PageResponse;
 import com.taskhub.dto.response.WalletReadinessResponse;
 import com.taskhub.dto.response.WalletResponse;
 import com.taskhub.dto.response.WalletTransactionResponse;
@@ -74,14 +76,25 @@ public class WalletService {
         }
     }
 
-    /**
-     * Lịch sử giao dịch của user hiện tại (mới nhất trước).
-     */
     public List<WalletTransactionResponse> getTransactions() {
         return walletTransactionRepository.findByUserIdOrderByCreatedAtDesc(AuthUtil.getCurrentUser().getId())
                 .stream()
                 .map(this::toResponse)
                 .toList();
+    }
+
+    public PageResponse<WalletTransactionResponse> getTransactionsPaged(PageRequestDto pageReq) {
+        Long userId = AuthUtil.getCurrentUser().getId();
+        var page = walletTransactionRepository.findByUserId(userId,
+                org.springframework.data.domain.PageRequest.of(pageReq.getPage(), Math.min(pageReq.getSize(), 100),
+                        org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "createdAt")));
+        return PageResponse.<WalletTransactionResponse>builder()
+                .content(page.getContent().stream().map(this::toResponse).toList())
+                .page(page.getNumber()).size(page.getSize())
+                .totalElements(page.getTotalElements()).totalPages(page.getTotalPages())
+                .first(page.isFirst()).last(page.isLast())
+                .hasNext(page.hasNext()).hasPrevious(page.hasPrevious())
+                .build();
     }
 
     /**

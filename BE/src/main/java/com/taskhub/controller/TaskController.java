@@ -1,5 +1,7 @@
 package com.taskhub.controller;
 
+import com.taskhub.dto.PageRequestDto;
+import com.taskhub.dto.PageResponse;
 import com.taskhub.dto.request.*;
 import com.taskhub.dto.response.*;
 import com.taskhub.entity.AcceptanceCriteria;
@@ -43,16 +45,28 @@ public class TaskController {
     }
 
     @GetMapping("/mine")
-    public ResponseEntity<ApiResponse<List<TaskResponse>>> myTasks(@RequestParam(required = false) String status) {
-        return ResponseEntity.ok(ApiResponse.ok(taskService.getMyTasks(status)));
+    public ResponseEntity<ApiResponse<PageResponse<TaskResponse>>> myTasks(
+            @RequestParam(required = false) String status,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "id") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortDir) {
+        PageRequestDto pageReq = PageRequestDto.builder()
+                .page(page).size(size).sortBy(sortBy).sortDir(sortDir).build();
+        return ResponseEntity.ok(ApiResponse.ok(taskService.getMyTasks(status, pageReq)));
     }
 
     @GetMapping("/available")
-    public ResponseEntity<ApiResponse<List<TaskResponse>>> available() {
-        return ResponseEntity.ok(ApiResponse.ok(taskService.getAvailableTasks()));
+    public ResponseEntity<ApiResponse<PageResponse<TaskResponse>>> available(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "createdAt") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortDir) {
+        PageRequestDto pageReq = PageRequestDto.builder()
+                .page(page).size(size).sortBy(sortBy).sortDir(sortDir).build();
+        return ResponseEntity.ok(ApiResponse.ok(taskService.getAvailableTasks(pageReq)));
     }
 
-    /** Lint criteria while drafting (no task id required). */
     @PostMapping("/validate-criteria")
     public ResponseEntity<ApiResponse<AiValidationService.ValidationResult>> validateCriteriaDraft(
             @Valid @RequestBody ValidateCriteriaRequest req) {
@@ -69,7 +83,6 @@ public class TaskController {
                 taskService.validateCriteriaList(criteria)));
     }
 
-    /** AI-assisted criteria from uploaded brief (PDF, Excel, image, DOCX). */
     @PostMapping(value = "/criteria/extract", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<CriteriaExtractResponse>> extractCriteria(
             @RequestPart("file") MultipartFile file) {
@@ -124,10 +137,6 @@ public class TaskController {
         return ResponseEntity.ok(ApiResponse.ok("Revision requested", submissionService.requestRevision(id, req)));
     }
 
-    /**
-     * POST /api/tasks/{id}/dispute
-     * Hirer mở dispute khi task SUBMITTED. Sinh AI report và lưu vào task.
-     */
     @PostMapping("/{id}/dispute")
     public ResponseEntity<ApiResponse<DisputeAIReport>> dispute(
             @PathVariable Long id,
@@ -135,19 +144,11 @@ public class TaskController {
         return ResponseEntity.ok(ApiResponse.ok("Dispute opened", disputeService.openDispute(id, req)));
     }
 
-    /**
-     * GET /api/tasks/{id}/dispute/report
-     * Hirer hoặc student xem báo cáo AI cho dispute.
-     */
     @GetMapping("/{id}/dispute/report")
     public ResponseEntity<ApiResponse<DisputeAIReport>> getDisputeReport(@PathVariable Long id) {
         return ResponseEntity.ok(ApiResponse.ok(disputeService.getDisputeReport(id)));
     }
 
-    /**
-     * POST /api/tasks/{id}/dispute/resolve
-     * Hirer giải quyết dispute: RELEASE_PAYMENT | REQUEST_REVISION | ESCALATE.
-     */
     @PostMapping("/{id}/dispute/resolve")
     public ResponseEntity<ApiResponse<DisputeResolveResponse>> resolveDispute(
             @PathVariable Long id,
