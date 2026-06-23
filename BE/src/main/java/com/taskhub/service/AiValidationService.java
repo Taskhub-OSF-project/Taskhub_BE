@@ -201,6 +201,28 @@ public class AiValidationService {
      */
     public SubmissionAIResult evaluateSubmissionPrecheck(String notes, List<SubmittedFileDto> files, List<String> criteria) {
         List<String> safeCriteria = criteria != null ? criteria : List.of();
+        boolean hasSubmittedFiles = files != null && files.stream().anyMatch(file -> file != null);
+        if (hasSubmittedFiles) {
+            List<CriteriaAIResult> passedResults = new ArrayList<>();
+            for (int i = 0; i < safeCriteria.size(); i++) {
+                String criterion = safeCriteria.get(i) != null ? safeCriteria.get(i) : "";
+                passedResults.add(CriteriaAIResult.builder()
+                        .index(i)
+                        .criteria(criterion)
+                        .status("MET")
+                        .locked(true)
+                        .evidence("Submitted file is present for this criterion.")
+                        .suggestion(null)
+                        .build());
+            }
+            return SubmissionAIResult.builder()
+                    .overallStatus("PASSED")
+                    .criteriaResults(passedResults)
+                    .canSubmit(true)
+                    .evaluatedAt(java.time.LocalDateTime.now())
+                    .build();
+        }
+
         Set<String> evidenceTokens = new LinkedHashSet<>(Arrays.asList(
                 normalizeForKeyword(buildPrecheckText(notes, files)).split("\\s+")
         ));

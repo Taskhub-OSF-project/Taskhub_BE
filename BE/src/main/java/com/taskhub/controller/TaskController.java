@@ -12,9 +12,9 @@ import com.taskhub.dto.response.DisputeResolveResponse;
 import com.taskhub.service.AiValidationService;
 import com.taskhub.service.CriteriaExtractionService;
 import com.taskhub.service.DisputeService;
+import com.taskhub.service.EscrowService;
 import com.taskhub.service.SubmissionService;
 import com.taskhub.service.TaskService;
-import com.taskhub.enums.TaskStatus;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
@@ -34,6 +34,7 @@ public class TaskController {
     private final CriteriaExtractionService criteriaExtractionService;
     private final SubmissionService submissionService;
     private final DisputeService disputeService;
+    private final EscrowService escrowService;
 
     @PostMapping
     @PreAuthorize("hasAnyRole('HIRER', 'ADMIN')")
@@ -125,8 +126,8 @@ public class TaskController {
 
     @PostMapping("/{id}/complete")
     public ResponseEntity<ApiResponse<TaskResponse>> complete(@PathVariable Long id) {
-        return ResponseEntity.ok(ApiResponse.ok("Task completed",
-                taskService.transitionTask(id, TaskStatus.COMPLETED)));
+        escrowService.releaseEscrow(id);
+        return ResponseEntity.ok(ApiResponse.ok("Task completed", taskService.getTask(id)));
     }
 
     @PostMapping("/{id}/publish")

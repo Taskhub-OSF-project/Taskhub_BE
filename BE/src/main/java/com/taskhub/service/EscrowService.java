@@ -77,18 +77,33 @@ public class EscrowService {
     }
 
     /**
-     * Release escrow sang ví student khi task COMPLETED.
+     * Releases escrow to the assigned student and completes submitted/disputed tasks.
      */
     @Transactional
     public void releaseEscrow(Long taskId) {
+        // Keep task completion and wallet release on the same path.
+        User hirer = AuthUtil.getCurrentUser();
+        if (hirer.getRole() != Role.HIRER)
+            throw TaskHubException.forbidden("Only hirers can release escrow");
+
         Task task = taskService.findTask(taskId);
-        if (task.getStatus() != TaskStatus.COMPLETED)
-            throw TaskHubException.badRequest("Task must be COMPLETED to release escrow");
+        if (!task.getHirer().getId().equals(hirer.getId()))
+            throw TaskHubException.forbidden("Not your task");
 
         Escrow escrow = escrowRepository.findByTaskId(taskId)
                 .orElseThrow(() -> TaskHubException.notFound("Escrow not found"));
+        if (escrow.getStatus() == EscrowStatus.RELEASED)
+            return;
         if (escrow.getStatus() != EscrowStatus.FUNDED)
             throw TaskHubException.badRequest("Escrow not in FUNDED state");
+
+        if (task.getStatus() == TaskStatus.SUBMITTED || task.getStatus() == TaskStatus.DISPUTED) {
+            task.getAcceptanceCriteria().forEach(c -> c.setStatus(CriteriaStatus.PASSED));
+            taskService.transition(task, TaskStatus.COMPLETED);
+            taskRepository.save(task);
+        } else if (task.getStatus() != TaskStatus.COMPLETED) {
+            throw TaskHubException.badRequest("Task must be SUBMITTED, DISPUTED or COMPLETED to release escrow");
+        }
 
         User student = task.getAssignedTo();
         if (student == null)

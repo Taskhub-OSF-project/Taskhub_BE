@@ -13,8 +13,13 @@ public final class FileUploadValidator {
             "application/pdf",
             "image/png",
             "image/jpeg",
+            "image/webp",
+            "image/svg+xml",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "application/zip"
+            "application/zip",
+            "application/x-zip-compressed",
+            "application/postscript",
+            "application/octet-stream"
     );
 
     private FileUploadValidator() {

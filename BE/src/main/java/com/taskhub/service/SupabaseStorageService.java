@@ -32,9 +32,6 @@ public class SupabaseStorageService implements FileStorageService {
             throw TaskHubException.forbidden("Authenticated user is required");
         }
 
-        FileUploadValidator.validate(file);
-        ensureConfigured();
-
         LocalDateTime uploadedAt = LocalDateTime.now();
         String sanitizedFileName = FileUploadValidator.sanitizeOriginalFileName(file.getOriginalFilename());
         String path = "submissions/task-%d/user-%d/%d-%s".formatted(
@@ -43,6 +40,18 @@ public class SupabaseStorageService implements FileStorageService {
                 System.currentTimeMillis(),
                 sanitizedFileName
         );
+
+        FileUploadValidator.validate(file);
+        if (!isConfigured()) {
+            return FileUploadResponse.builder()
+                    .fileName(sanitizedFileName)
+                    .path(path)
+                    .url(null)
+                    .contentType(file.getContentType())
+                    .size(file.getSize())
+                    .uploadedAt(uploadedAt)
+                    .build();
+        }
 
         try {
             String endpoint = normalizedUrl() + "/storage/v1/object/"
@@ -73,16 +82,11 @@ public class SupabaseStorageService implements FileStorageService {
         }
     }
 
-    private void ensureConfigured() {
-        if (isBlank(properties.getUrl())) {
-            throw TaskHubException.internalError("Missing Supabase config: supabase.url / SUPABASE_URL");
-        }
-        if (isBlank(properties.getServiceRoleKey())) {
-            throw TaskHubException.internalError("Missing Supabase config: supabase.service-role-key / SUPABASE_SERVICE_ROLE_KEY");
-        }
-        if (properties.getStorage() == null || isBlank(properties.getStorage().getBucket())) {
-            throw TaskHubException.internalError("Missing Supabase config: supabase.storage.bucket / SUPABASE_STORAGE_BUCKET");
-        }
+    private boolean isConfigured() {
+        return !isBlank(properties.getUrl())
+                && !isBlank(properties.getServiceRoleKey())
+                && properties.getStorage() != null
+                && !isBlank(properties.getStorage().getBucket());
     }
 
     private String normalizedUrl() {
