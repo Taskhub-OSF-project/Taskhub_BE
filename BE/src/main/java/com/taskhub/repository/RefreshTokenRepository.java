@@ -16,15 +16,15 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, Long
 
     List<RefreshToken> findByUserIdOrderByCreatedAtDesc(Long userId);
 
-    @Modifying
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE RefreshToken r SET r.revoked = true, r.revokedAt = CURRENT_TIMESTAMP, r.replacedByHash = :newHash WHERE r.user.id = :userId AND r.revoked = false AND r.expiresAt > CURRENT_TIMESTAMP")
     int revokeAllUserTokens(@Param("userId") Long userId, @Param("newHash") String newHash);
 
-    @Modifying
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE RefreshToken r SET r.revoked = true, r.revokedAt = CURRENT_TIMESTAMP WHERE r.tokenHash = :tokenHash")
     int revokeByTokenHash(@Param("tokenHash") String tokenHash);
 
-    @Modifying
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE RefreshToken r SET r.revoked = true, r.revokedAt = CURRENT_TIMESTAMP WHERE r.user.id = :userId AND r.expiresAt < CURRENT_TIMESTAMP AND r.revoked = false")
     int purgeExpiredTokens(@Param("userId") Long userId);
 }

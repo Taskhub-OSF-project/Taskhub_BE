@@ -7,6 +7,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -20,6 +21,7 @@ import java.util.List;
  * Thuộc module Security, chạy trước các controller protected.
  */
 @Component
+@Slf4j
 @RequiredArgsConstructor
 public class JwtAuthFilter extends OncePerRequestFilter {
     private final JwtService jwtService;
@@ -54,24 +56,39 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
         String header = request.getHeader("Authorization");
+        String clientIp = resolveClientIp(request);
 
         if (header != null && header.startsWith("Bearer ")) {
             String token = header.substring(7);
 
-            if (jwtService.validateToken(token)) {
-                Long userId = jwtService.getUserIdFromToken(token);
-                userRepository.findById(userId).ifPresent(user -> {
-                    // Build Authentication từ user và role để downstream dùng.
-                    var auth = new UsernamePasswordAuthenticationToken(
-                            user,
-                            null,
-                            List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().name()))
-                    );
-                    SecurityContextHolder.getContext().setAuthentication(auth);
-                });
+            if (!jwtService.validateToken(token)) {
+                log.warn("[AUTH] Invalid/expired token from IP={}, path={}", clientIp, request.getRequestURI());
+                chain.doFilter(request, response);
+                return;
             }
+
+            Long userId = jwtService.getUserIdFromToken(token);
+            userRepository.findById(userId).ifPresentOrElse(
+                    user -> {
+                        var auth = new UsernamePasswordAuthenticationToken(
+                                user,
+                                null,
+                                List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().name()))
+                        );
+                        SecurityContextHolder.getContext().setAuthentication(auth);
+                    },
+                    () -> log.warn("[AUTH] Token valid but user not found: id={}, IP={}", userId, clientIp)
+            );
         }
 
         chain.doFilter(request, response);
+    }
+
+    private String resolveClientIp(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) return forwarded.split(",")[0].trim();
+        String realIp = request.getHeader("X-Real-IP");
+        if (realIp != null && !realIp.isBlank()) return realIp.trim();
+        return request.getRemoteAddr();
     }
 }

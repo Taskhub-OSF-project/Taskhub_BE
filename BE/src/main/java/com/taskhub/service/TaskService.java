@@ -42,6 +42,7 @@ public class TaskService {
                 .category(trimToNull(req.getCategory()))
                 .budget(req.getBudget()).deadline(req.getDeadline())
                 .hirer(hirer).status(TaskStatus.DRAFT).build();
+        task.setCreatedBy(hirer.getId());
 
         for (String desc : criteria) {
             task.getAcceptanceCriteria().add(
@@ -127,6 +128,19 @@ public class TaskService {
                 .build();
     }
 
+    public PageResponse<TaskResponse> getEscalatedDisputes(PageRequestDto pageReq) {
+        PageRequest springPage = PageRequest.of(pageReq.getPage(), Math.min(pageReq.getSize(), 100),
+                Sort.by(Sort.Direction.DESC, "createdAt"));
+        Page<Task> taskPage = taskRepository.findByStatus(TaskStatus.DISPUTED, springPage);
+        return PageResponse.<TaskResponse>builder()
+                .content(taskPage.getContent().stream().map(this::toResponse).toList())
+                .page(taskPage.getNumber()).size(taskPage.getSize())
+                .totalElements(taskPage.getTotalElements()).totalPages(taskPage.getTotalPages())
+                .first(taskPage.isFirst()).last(taskPage.isLast())
+                .hasNext(taskPage.hasNext()).hasPrevious(taskPage.hasPrevious())
+                .build();
+    }
+
     @Transactional
     public TaskResponse updateTask(Long taskId, com.taskhub.dto.request.PatchTaskRequest req) {
         User user = AuthUtil.getCurrentUser();
@@ -161,6 +175,7 @@ public class TaskService {
             }
         }
 
+        task.setUpdatedBy(user.getId());
         return toResponse(taskRepository.save(task));
     }
 
@@ -207,7 +222,7 @@ public class TaskService {
     @Transactional
     public TaskResponse publishTask(Long taskId) {
         Task task = findOwnedTask(taskId);
-        transition(task, TaskStatus.ACTIVE);
+        transition(task, TaskStatus.LOCKED);
         return toResponse(taskRepository.save(task));
     }
 

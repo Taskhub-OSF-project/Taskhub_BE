@@ -1,0 +1,404 @@
+-- ============================================================
+-- TaskHub Platform — Initial Schema
+-- V1__init.sql  |  Compatible: H2 (dev), PostgreSQL (Supabase), SQL Server
+-- Run with: Flyway migrate
+-- ============================================================
+
+-- ── Roles / Users ───────────────────────────────────────────
+CREATE TABLE users (
+    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    email           VARCHAR(255) NOT NULL UNIQUE,
+    password        VARCHAR(255) NOT NULL,
+    full_name       VARCHAR(255) NOT NULL,
+    university      VARCHAR(100),
+    major           VARCHAR(100),
+    role            VARCHAR(20)  NOT NULL,
+    wallet_balance  DECIMAL(12,2) DEFAULT 0.00,
+    bio             VARCHAR(500),
+    experience      TEXT,
+    portfolio_url   VARCHAR(500),
+    phone           VARCHAR(20),
+    title           VARCHAR(200),
+    hourly_rate     VARCHAR(20),
+    availability    VARCHAR(50),
+    avatar_url      VARCHAR(500),
+    is_verified     BOOLEAN      NOT NULL DEFAULT FALSE,
+    is_available    BOOLEAN      NOT NULL DEFAULT TRUE,
+    is_banned      BOOLEAN      NOT NULL DEFAULT FALSE,
+    created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_users_email       ON users(email);
+CREATE INDEX idx_users_role        ON users(role);
+CREATE INDEX idx_users_created_at  ON users(created_at DESC);
+CREATE INDEX idx_users_is_banned  ON users(is_banned);
+
+-- Element collections
+CREATE TABLE user_skills (
+    user_id BIGINT NOT NULL,
+    skill   VARCHAR(255),
+    CONSTRAINT fk_userskills_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_userskills_user ON user_skills(user_id);
+
+CREATE TABLE user_languages (
+    user_id   BIGINT NOT NULL,
+    language  VARCHAR(255),
+    CONSTRAINT fk_userlangs_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_userlangs_user ON user_languages(user_id);
+
+CREATE TABLE user_certifications (
+    user_id         BIGINT NOT NULL,
+    certification   VARCHAR(255),
+    CONSTRAINT fk_usercerts_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_usercerts_user ON user_certifications(user_id);
+
+-- ── Tasks ──────────────────────────────────────────────────
+CREATE TABLE tasks (
+    id                              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    title                           VARCHAR(255) NOT NULL,
+    description                     TEXT         NOT NULL,
+    category                        VARCHAR(100),
+    budget                          DECIMAL(12,2) NOT NULL,
+    deadline                        TIMESTAMP    NOT NULL,
+    status                          VARCHAR(20)  NOT NULL DEFAULT 'DRAFT',
+    hirer_id                        BIGINT       NOT NULL,
+    assigned_to                     BIGINT,
+    submission_ai_result_json       TEXT,
+    latest_precheck_at             TIMESTAMP,
+    precheck_student_id            BIGINT,
+    precheck_can_submit            BOOLEAN,
+    precheck_submitted_file_paths_json TEXT,
+    revision_count                 INT          NOT NULL DEFAULT 0,
+    dispute_reason                 VARCHAR(500),
+    dispute_description            TEXT,
+    dispute_ai_report_json        TEXT,
+    applicant_count                INT          NOT NULL DEFAULT 0,
+    view_count                     INT          NOT NULL DEFAULT 0,
+    is_featured                    BOOLEAN      NOT NULL DEFAULT FALSE,
+    created_at                     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at                     TIMESTAMP,
+    created_by                     BIGINT,
+    updated_by                     BIGINT,
+    CONSTRAINT fk_tasks_hirer     FOREIGN KEY (hirer_id)     REFERENCES users(id),
+    CONSTRAINT fk_tasks_assignee  FOREIGN KEY (assigned_to)  REFERENCES users(id)
+);
+
+CREATE INDEX idx_tasks_hirer         ON tasks(hirer_id);
+CREATE INDEX idx_tasks_assigned      ON tasks(assigned_to);
+CREATE INDEX idx_tasks_status        ON tasks(status);
+CREATE INDEX idx_tasks_created_at    ON tasks(created_at DESC);
+CREATE INDEX idx_tasks_deadline      ON tasks(deadline);
+CREATE INDEX idx_tasks_category      ON tasks(category);
+
+CREATE TABLE task_skills_required (
+    task_id BIGINT NOT NULL,
+    skill   VARCHAR(255),
+    CONSTRAINT fk_taskskills_task FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_taskskills_task ON task_skills_required(task_id);
+
+-- ── Acceptance Criteria ────────────────────────────────────
+CREATE TABLE acceptance_criteria (
+    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    description TEXT         NOT NULL,
+    status      VARCHAR(20)  DEFAULT 'PENDING',
+    task_id     BIGINT      NOT NULL,
+    CONSTRAINT fk_ac_task FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_ac_task ON acceptance_criteria(task_id);
+
+-- ── Task Applications ─────────────────────────────────────
+CREATE TABLE task_applications (
+    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    task_id     BIGINT       NOT NULL,
+    student_id  BIGINT       NOT NULL,
+    cover_letter TEXT,
+    status      VARCHAR(20)  DEFAULT 'PENDING',
+    applied_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_app_task    FOREIGN KEY (task_id)    REFERENCES tasks(id),
+    CONSTRAINT fk_app_student FOREIGN KEY (student_id) REFERENCES users(id),
+    CONSTRAINT uk_app_task_student UNIQUE (task_id, student_id)
+);
+CREATE INDEX idx_app_task    ON task_applications(task_id);
+CREATE INDEX idx_app_student ON task_applications(student_id);
+
+-- ── Submissions ───────────────────────────────────────────
+CREATE TABLE submissions (
+    id                  BIGINT AUTO_INCREMENT PRIMARY KEY,
+    task_id             BIGINT       NOT NULL,
+    student_id          BIGINT       NOT NULL,
+    file_url            TEXT,
+    submitted_files_json TEXT,
+    notes               TEXT,
+    ai_score            INT,
+    ai_report           TEXT,
+    is_revision         BOOLEAN,
+    submitted_at        TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_sub_task    FOREIGN KEY (task_id)    REFERENCES tasks(id),
+    CONSTRAINT fk_sub_student FOREIGN KEY (student_id) REFERENCES users(id)
+);
+CREATE INDEX idx_sub_task    ON submissions(task_id);
+CREATE INDEX idx_sub_student ON submissions(student_id);
+
+-- ── Escrow ────────────────────────────────────────────────
+CREATE TABLE escrows (
+    id            BIGINT AUTO_INCREMENT PRIMARY KEY,
+    task_id       BIGINT        NOT NULL UNIQUE,
+    amount        DECIMAL(12,2) NOT NULL,
+    platform_fee  DECIMAL(12,2) DEFAULT 0.00,
+    status        VARCHAR(20)   DEFAULT 'PENDING',
+    created_at    TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_escrow_task FOREIGN KEY (task_id) REFERENCES tasks(id)
+);
+
+-- ── Milestones ────────────────────────────────────────────
+CREATE TABLE milestones (
+    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    task_id         BIGINT        NOT NULL,
+    title           VARCHAR(255)  NOT NULL,
+    description     TEXT,
+    amount          DECIMAL(12,2) NOT NULL,
+    due_date        TIMESTAMP,
+    display_order   INT           NOT NULL DEFAULT 0,
+    status          VARCHAR(20)   NOT NULL DEFAULT 'PENDING',
+    escrow_status   VARCHAR(20)  DEFAULT 'PENDING',
+    funded_at       TIMESTAMP,
+    released_at     TIMESTAMP,
+    created_at      TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP,
+    created_by      BIGINT,
+    updated_by      BIGINT,
+    CONSTRAINT fk_ms_task FOREIGN KEY (task_id) REFERENCES tasks(id)
+);
+CREATE INDEX idx_ms_task  ON milestones(task_id);
+CREATE INDEX idx_ms_status ON milestones(status);
+
+-- ── Reviews ───────────────────────────────────────────────
+CREATE TABLE reviews (
+    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    task_id     BIGINT       NOT NULL,
+    reviewer_id BIGINT       NOT NULL,
+    reviewee_id BIGINT       NOT NULL,
+    type        VARCHAR(30)  NOT NULL,
+    rating      INT          NOT NULL,
+    comment     TEXT,
+    is_public   BOOLEAN      NOT NULL DEFAULT TRUE,
+    created_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_rev_task    FOREIGN KEY (task_id)     REFERENCES tasks(id),
+    CONSTRAINT fk_rev_reviewer FOREIGN KEY (reviewer_id) REFERENCES users(id),
+    CONSTRAINT fk_rev_reviewee FOREIGN KEY (reviewee_id) REFERENCES users(id),
+    CONSTRAINT uk_rev_task_reviewer_type UNIQUE (task_id, reviewer_id, type)
+);
+CREATE INDEX idx_rev_reviewee ON reviews(reviewee_id);
+CREATE INDEX idx_rev_task    ON reviews(task_id);
+
+-- ── Portfolio ──────────────────────────────────────────────
+CREATE TABLE portfolio_items (
+    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id         BIGINT       NOT NULL,
+    title           VARCHAR(255) NOT NULL,
+    description     TEXT,
+    project_url     VARCHAR(500),
+    image_urls      TEXT,
+    file_url        VARCHAR(500),
+    file_name       VARCHAR(255),
+    display_order   INT          DEFAULT 0,
+    is_public       BOOLEAN      NOT NULL DEFAULT TRUE,
+    created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP,
+    created_by      BIGINT,
+    updated_by      BIGINT,
+    CONSTRAINT fk_portfolio_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_portfolio_user ON portfolio_items(user_id);
+
+-- ── Notifications ─────────────────────────────────────────
+CREATE TABLE notifications (
+    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id     BIGINT       NOT NULL,
+    type        VARCHAR(50)  NOT NULL,
+    title       VARCHAR(255) NOT NULL,
+    message     TEXT         NOT NULL,
+    is_read     BOOLEAN      NOT NULL DEFAULT FALSE,
+    read_at     TIMESTAMP,
+    action_url  VARCHAR(500),
+    task_id     BIGINT,
+    metadata    TEXT,
+    created_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_notif_user FOREIGN KEY (user_id) REFERENCES users(id)
+);
+CREATE INDEX idx_notif_user         ON notifications(user_id);
+CREATE INDEX idx_notif_user_created ON notifications(user_id, created_at DESC);
+
+-- ── Conversations ─────────────────────────────────────────
+CREATE TABLE conversations (
+    id                    BIGINT AUTO_INCREMENT PRIMARY KEY,
+    task_id               BIGINT       NOT NULL,
+    participant_a_id      BIGINT       NOT NULL,
+    participant_b_id      BIGINT       NOT NULL,
+    last_message_at       TIMESTAMP,
+    last_message_preview  VARCHAR(255),
+    unread_count_a        INT          DEFAULT 0,
+    unread_count_b        INT          DEFAULT 0,
+    created_at            TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_conv_task FOREIGN KEY (task_id)          REFERENCES tasks(id),
+    CONSTRAINT fk_conv_a    FOREIGN KEY (participant_a_id) REFERENCES users(id),
+    CONSTRAINT fk_conv_b    FOREIGN KEY (participant_b_id) REFERENCES users(id),
+    CONSTRAINT uk_conv_task_participants UNIQUE (task_id, participant_a_id, participant_b_id)
+);
+CREATE INDEX idx_conv_task ON conversations(task_id);
+
+-- ── Messages ───────────────────────────────────────────────
+CREATE TABLE messages (
+    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    conversation_id BIGINT       NOT NULL,
+    sender_id       BIGINT       NOT NULL,
+    content         TEXT         NOT NULL,
+    is_read         BOOLEAN      NOT NULL DEFAULT FALSE,
+    read_at         TIMESTAMP,
+    created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_msg_conv  FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+    CONSTRAINT fk_msg_sender FOREIGN KEY (sender_id)      REFERENCES users(id)
+);
+CREATE INDEX idx_msg_conv     ON messages(conversation_id);
+CREATE INDEX idx_msg_sender  ON messages(sender_id);
+
+-- ── Refresh Tokens ─────────────────────────────────────────
+CREATE TABLE refresh_tokens (
+    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    token_hash      VARCHAR(64)  NOT NULL UNIQUE,
+    user_id         BIGINT      NOT NULL,
+    expires_at      TIMESTAMP    NOT NULL,
+    revoked         BOOLEAN     NOT NULL DEFAULT FALSE,
+    created_at      TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    revoked_at      TIMESTAMP,
+    replaced_by_hash VARCHAR(64),
+    CONSTRAINT fk_rft_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_rft_user  ON refresh_tokens(user_id);
+CREATE INDEX idx_rft_hash ON refresh_tokens(token_hash);
+
+-- ── Password Reset Tokens ──────────────────────────────────
+CREATE TABLE password_reset_tokens (
+    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    token       VARCHAR(255) NOT NULL UNIQUE,
+    token_hash  VARCHAR(255) NOT NULL,
+    user_id     BIGINT       NOT NULL,
+    expires_at  TIMESTAMP    NOT NULL,
+    created_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    used        BOOLEAN     NOT NULL DEFAULT FALSE,
+    CONSTRAINT fk_prt_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_prt_user ON password_reset_tokens(user_id);
+
+-- ── Wallet Transactions ───────────────────────────────────
+CREATE TABLE wallet_transactions (
+    id             BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id        BIGINT        NOT NULL,
+    task_id        BIGINT,
+    type           VARCHAR(30)   NOT NULL,
+    amount         DECIMAL(12,2) NOT NULL,
+    balance_after  DECIMAL(12,2) NOT NULL,
+    created_at     TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_wtx_user FOREIGN KEY (user_id) REFERENCES users(id),
+    CONSTRAINT fk_wtx_task FOREIGN KEY (task_id) REFERENCES tasks(id)
+);
+CREATE INDEX idx_wtx_user  ON wallet_transactions(user_id);
+CREATE INDEX idx_wtx_task  ON wallet_transactions(task_id);
+CREATE INDEX idx_wtx_type ON wallet_transactions(type);
+CREATE INDEX idx_wtx_created ON wallet_transactions(created_at DESC);
+
+-- ── Daily Metrics ──────────────────────────────────────────
+CREATE TABLE daily_metrics (
+    id                    BIGINT AUTO_INCREMENT PRIMARY KEY,
+    metric_date           DATE        NOT NULL UNIQUE,
+    new_users             INT         DEFAULT 0,
+    new_tasks             INT         DEFAULT 0,
+    completed_tasks       INT         DEFAULT 0,
+    total_escrow_volume   DECIMAL(16,2) DEFAULT 0.00,
+    total_platform_revenue DECIMAL(16,2) DEFAULT 0.00,
+    active_users          INT         DEFAULT 0,
+    disputed_tasks        INT         DEFAULT 0
+);
+
+-- ── Dispute Events ─────────────────────────────────────────
+CREATE TABLE dispute_events (
+    id                  BIGINT AUTO_INCREMENT PRIMARY KEY,
+    task_id             BIGINT       NOT NULL,
+    event_type          VARCHAR(50)  NOT NULL,
+    performed_by        BIGINT,
+    performed_by_role   VARCHAR(20),
+    details             TEXT,
+    ai_recommendation   VARCHAR(50),
+    action_taken        VARCHAR(50),
+    created_at          TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_de_task FOREIGN KEY (task_id) REFERENCES tasks(id)
+);
+CREATE INDEX idx_de_task ON dispute_events(task_id);
+
+-- ── Revision Requests ─────────────────────────────────────
+CREATE TABLE revision_requests (
+    id                  BIGINT AUTO_INCREMENT PRIMARY KEY,
+    task_id             BIGINT       NOT NULL,
+    submission_id       BIGINT,
+    requested_by_id     BIGINT       NOT NULL,
+    student_id         BIGINT       NOT NULL,
+    revision_number     INT          NOT NULL,
+    reason              TEXT         NOT NULL,
+    description         TEXT,
+    ai_suggestions_json TEXT        NOT NULL,
+    created_at          TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_rr_task         FOREIGN KEY (task_id)       REFERENCES tasks(id),
+    CONSTRAINT fk_rr_submission   FOREIGN KEY (submission_id) REFERENCES submissions(id),
+    CONSTRAINT fk_rr_requestedby  FOREIGN KEY (requested_by_id) REFERENCES users(id),
+    CONSTRAINT fk_rr_student      FOREIGN KEY (student_id)     REFERENCES users(id)
+);
+CREATE INDEX idx_rr_task  ON revision_requests(task_id);
+CREATE INDEX idx_rr_student ON revision_requests(student_id);
+
+-- ── Audit Logs (Phase 7) ──────────────────────────────────
+CREATE TABLE audit_logs (
+    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id         BIGINT,
+    user_email_hash VARCHAR(255),
+    action          VARCHAR(50)   NOT NULL,
+    entity_type     VARCHAR(50),
+    entity_id       BIGINT,
+    entity_name     VARCHAR(255),
+    ip_address      VARCHAR(50),
+    changes         TEXT,
+    metadata        TEXT,
+    outcome         VARCHAR(50),
+    failure_reason  VARCHAR(500),
+    created_at      TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_al_user FOREIGN KEY (user_id) REFERENCES users(id)
+);
+CREATE INDEX idx_al_user        ON audit_logs(user_id);
+CREATE INDEX idx_al_entity      ON audit_logs(entity_type, entity_id);
+CREATE INDEX idx_al_created_at  ON audit_logs(created_at DESC);
+CREATE INDEX idx_al_action      ON audit_logs(action);
+
+-- ── Security Events (Phase 7) ─────────────────────────────
+CREATE TABLE security_events (
+    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id         BIGINT,
+    user_email_hash VARCHAR(255),
+    event_type      VARCHAR(50)   NOT NULL,
+    outcome         VARCHAR(20)   NOT NULL,
+    ip_address      VARCHAR(50),
+    user_agent      VARCHAR(500),
+    ip_country      VARCHAR(45),
+    ip_city         VARCHAR(100),
+    request_path    VARCHAR(255),
+    request_method  VARCHAR(10),
+    reason          TEXT,
+    metadata        TEXT,
+    created_at      TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_se_user FOREIGN KEY (user_id) REFERENCES users(id)
+);
+CREATE INDEX idx_se_user        ON security_events(user_id);
+CREATE INDEX idx_se_type        ON security_events(event_type);
+CREATE INDEX idx_se_created_at  ON security_events(created_at DESC);

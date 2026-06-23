@@ -3,6 +3,7 @@ package com.taskhub.dto.request;
 import com.taskhub.enums.Role;
 import jakarta.validation.constraints.*;
 import lombok.*;
+import java.time.LocalDate;
 
 @Data @Builder @NoArgsConstructor @AllArgsConstructor
 public class RegisterRequest {
@@ -21,4 +22,6 @@ public class RegisterRequest {
 
     @NotNull
     private Role role;
+
+    private LocalDate dateOfBirth;
 }

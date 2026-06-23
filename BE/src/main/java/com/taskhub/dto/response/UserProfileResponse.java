@@ -2,6 +2,8 @@ package com.taskhub.dto.response;
 
 import lombok.*;
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.Period;
 import java.util.List;
 
 @Data @Builder @NoArgsConstructor @AllArgsConstructor
@@ -26,6 +28,9 @@ public class UserProfileResponse {
     private BigDecimal walletBalance;
     private Boolean isVerified;
     private Boolean isAvailable;
+    private Boolean isBanned;
+    private LocalDate dateOfBirth;
+    private Integer age;
     private Double averageRatingAsFreelancer;
     private Double averageRatingAsHirer;
     private Long totalReviewsAsFreelancer;

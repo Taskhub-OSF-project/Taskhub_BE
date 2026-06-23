@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "milestones")
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
-public class Milestone {
+public class Milestone extends BaseEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -49,16 +49,6 @@ public class Milestone {
 
     @Column(name = "released_at")
     private LocalDateTime releasedAt;
-
-    @Column(name = "created_at", nullable = false, updatable = false)
-    @Builder.Default
-    private LocalDateTime createdAt = LocalDateTime.now();
-
-    @Column(name = "updated_at")
-    private LocalDateTime updatedAt;
-
-    @PreUpdate
-    public void onUpdate() { this.updatedAt = LocalDateTime.now(); }
 
     public enum MilestoneStatus {
         PENDING,

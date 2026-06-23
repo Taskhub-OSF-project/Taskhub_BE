@@ -19,6 +19,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -35,6 +36,7 @@ public class TaskController {
     private final DisputeService disputeService;
 
     @PostMapping
+    @PreAuthorize("hasAnyRole('HIRER', 'ADMIN')")
     public ResponseEntity<ApiResponse<TaskResponse>> create(@Valid @RequestBody CreateTaskRequest req) {
         return ResponseEntity.ok(ApiResponse.ok("Task created", taskService.createTask(req)));
     }
@@ -57,6 +59,7 @@ public class TaskController {
     }
 
     @GetMapping("/available")
+    @PreAuthorize("hasAnyRole('STUDENT', 'ADMIN')")
     public ResponseEntity<ApiResponse<PageResponse<TaskResponse>>> available(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,

@@ -64,8 +64,8 @@ public class PortfolioService {
                 .displayOrder(displayOrderVal)
                 .isPublic(req.getIsPublic() != null ? req.getIsPublic() : true)
                 .build();
+        item.setCreatedBy(current.getId());
         item = portfolioRepo.save(item);
-
         log.info("Portfolio item created: id={}, userId={}", item.getId(), current.getId());
         return toResponse(item);
     }
@@ -89,6 +89,7 @@ public class PortfolioService {
         if (req.getDisplayOrder() != null) item.setDisplayOrder(req.getDisplayOrder());
         if (req.getIsPublic() != null) item.setIsPublic(req.getIsPublic());
 
+        item.setUpdatedBy(current.getId());
         item = portfolioRepo.save(item);
         return toResponse(item);
     }

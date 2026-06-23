@@ -22,6 +22,8 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.Period;
 import java.util.List;
 
 @Service
@@ -53,7 +55,9 @@ public class UserService {
         if (req.getFullName() != null && !req.getFullName().isBlank()) {
             user.setFullName(req.getFullName().trim());
         }
-        user.setUniversity(trimToNull(req.getUniversity()));
+        // Support both 'school' (FE convention) and 'university' field
+        String schoolValue = req.getSchool() != null ? req.getSchool() : req.getUniversity();
+        user.setUniversity(trimToNull(schoolValue));
         user.setMajor(trimToNull(req.getMajor()));
         user.setBio(trimToNull(req.getBio()));
         user.setExperience(trimToNull(req.getExperience()));
@@ -66,6 +70,7 @@ public class UserService {
         if (req.getSkills() != null) user.setSkills(req.getSkills());
         if (req.getLanguages() != null) user.setLanguages(req.getLanguages());
         if (req.getCertifications() != null) user.setCertifications(req.getCertifications());
+        if (req.getDateOfBirth() != null) user.setDateOfBirth(req.getDateOfBirth());
 
         user = userRepository.save(user);
         return buildProfile(user.getId());
@@ -78,6 +83,25 @@ public class UserService {
                 .orElseThrow(() -> TaskHubException.notFound("User not found"));
         user.setIsAvailable(available);
         userRepository.save(user);
+    }
+
+    @Transactional
+    public UserProfileResponse changeUserRole(Long userId, Role newRole) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> TaskHubException.notFound("User not found"));
+        user.setRole(newRole);
+        user = userRepository.save(user);
+        log.info("Admin changed role of user {} to {}", userId, newRole);
+        return buildProfile(user.getId());
+    }
+
+    @Transactional
+    public void setUserBanned(Long userId, boolean banned) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> TaskHubException.notFound("User not found"));
+        user.setIsBanned(banned);
+        userRepository.save(user);
+        log.info("Admin {} user {}", banned ? "banned" : "unbanned", userId);
     }
 
     @Transactional(readOnly = true)
@@ -157,6 +181,11 @@ public class UserService {
                 .certifications(user.getCertifications()).avatarUrl(user.getAvatarUrl())
                 .role(user.getRole().name()).walletBalance(user.getWalletBalance())
                 .isVerified(user.getIsVerified()).isAvailable(user.getIsAvailable())
+                .isBanned(user.getIsBanned())
+                .dateOfBirth(user.getDateOfBirth())
+                .age(user.getDateOfBirth() != null
+                        ? Period.between(user.getDateOfBirth(), LocalDate.now()).getYears()
+                        : null)
                 .averageRatingAsFreelancer(avgFreelancer != null ? Math.round(avgFreelancer * 10.0) / 10.0 : null)
                 .averageRatingAsHirer(avgHirer != null ? Math.round(avgHirer * 10.0) / 10.0 : null)
                 .totalReviewsAsFreelancer(reviewsFreelancer).totalReviewsAsHirer(reviewsHirer)

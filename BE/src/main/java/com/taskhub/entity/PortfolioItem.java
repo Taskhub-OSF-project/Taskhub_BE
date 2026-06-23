@@ -2,12 +2,11 @@ package com.taskhub.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
-import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "portfolio_items")
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
-public class PortfolioItem {
+public class PortfolioItem extends BaseEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -41,13 +40,4 @@ public class PortfolioItem {
     @Column(nullable = false)
     @Builder.Default
     private Boolean isPublic = true;
-
-    @Builder.Default
-    private LocalDateTime createdAt = LocalDateTime.now();
-
-    @Column(name = "updated_at")
-    private LocalDateTime updatedAt;
-
-    @PreUpdate
-    public void onUpdate() { this.updatedAt = LocalDateTime.now(); }
 }

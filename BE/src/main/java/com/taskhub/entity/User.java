@@ -81,6 +81,8 @@ public class User {
     @Column(length = 500)
     private String avatarUrl;
 
+    private java.time.LocalDate dateOfBirth;
+
     @Column(name = "is_verified", nullable = false)
     @Builder.Default
     private Boolean isVerified = false;
@@ -88,6 +90,10 @@ public class User {
     @Column(name = "is_available", nullable = false)
     @Builder.Default
     private Boolean isAvailable = true;
+
+    @Column(name = "is_banned", nullable = false)
+    @Builder.Default
+    private Boolean isBanned = false;
 
     @Column(nullable = false, updatable = false)
     @Builder.Default

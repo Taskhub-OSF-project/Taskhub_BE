@@ -1,6 +1,7 @@
 package com.taskhub.security;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -14,6 +15,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -23,6 +25,7 @@ import java.util.List;
 @EnableWebSecurity
 @EnableMethodSecurity
 @RequiredArgsConstructor
+@Slf4j
 public class SecurityConfig {
     private final JwtAuthFilter jwtAuthFilter;
     private final RateLimitFilter rateLimitFilter;
@@ -30,17 +33,30 @@ public class SecurityConfig {
     @Value("${spring.profiles.active:dev}")
     private String activeProfile;
 
+    @Value("${app.cors.allowed-origins:}")
+    private String allowedOrigins;
+
+    @Value("${app.cors.allowed-origin-patterns:*}")
+    private String allowedOriginPatterns;
+
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         return http
                 .cors(c -> c.configurationSource(corsSource()))
                 .csrf(c -> c.disable())
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .headers(h -> h.frameOptions(f -> f.sameOrigin()))
+                .headers(h -> h
+                        .frameOptions(f -> f.sameOrigin())
+                        .contentTypeOptions(c -> {})
+                        .xssProtection(x -> x.disable())
+                        .cacheControl(cache -> {})
+                        .referrerPolicy(r -> r.policy(ReferrerPolicy.ORIGIN_WHEN_CROSS_ORIGIN))
+                        .permissionsPolicy(p -> p.policy("geolocation=(), microphone=(), camera=()"))
+                )
                 .authorizeHttpRequests(a -> a
                         .requestMatchers("/api/files/**").authenticated()
-                        .requestMatchers(getPublicMatchers())
-                        .permitAll()
+                        .requestMatchers(getAdminMatchers()).hasRole("ADMIN")
+                        .requestMatchers(getPublicMatchers()).permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
@@ -66,6 +82,13 @@ public class SecurityConfig {
         return matchers.toArray(new String[0]);
     }
 
+    private String[] getAdminMatchers() {
+        return new String[] {
+                "/api/admin/**",
+                "/api/admin/analytics/**"
+        };
+    }
+
     @Bean public PasswordEncoder passwordEncoder() { return new BCryptPasswordEncoder(); }
 
     @Bean public AuthenticationManager authManager(AuthenticationConfiguration config) throws Exception {
@@ -74,7 +97,14 @@ public class SecurityConfig {
 
     private CorsConfigurationSource corsSource() {
         var config = new CorsConfiguration();
-        config.setAllowedOriginPatterns(List.of("*"));
+        // Use explicit allowed origins from env var if set, otherwise use pattern
+        if (allowedOrigins != null && !allowedOrigins.isBlank()) {
+            config.setAllowedOriginPatterns(List.of(allowedOrigins.split(",")));
+            log.info("CORS: using allowed origins from config: {}", allowedOrigins);
+        } else {
+            config.setAllowedOriginPatterns(List.of(allowedOriginPatterns.split(",")));
+            log.warn("CORS: using permissive origin pattern '{}' — set app.cors.allowed-origins for production", allowedOriginPatterns);
+        }
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setExposedHeaders(List.of("Authorization"));

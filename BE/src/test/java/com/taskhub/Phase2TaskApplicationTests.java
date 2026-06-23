@@ -1,7 +1,9 @@
 package com.taskhub;
 
 import com.taskhub.dto.PageRequestDto;
+import com.taskhub.dto.PageResponse;
 import com.taskhub.dto.request.PatchTaskRequest;
+import com.taskhub.dto.response.TaskResponse;
 import com.taskhub.entity.Task;
 import com.taskhub.entity.TaskApplication;
 import com.taskhub.entity.User;
@@ -52,7 +54,7 @@ class Phase2TaskApplicationTests {
                 .title("Updated title")
                 .build();
 
-        var updated = taskService.updateTask(task.getId(), req);
+        TaskResponse updated = taskService.updateTask(task.getId(), req);
         assertEquals("Updated title", updated.getTitle());
         assertEquals(TaskStatus.DRAFT, updated.getStatus());
     }
@@ -100,7 +102,7 @@ class Phase2TaskApplicationTests {
         createTask(hirer, TaskStatus.ACTIVE);
         setAuth(hirer);
 
-        var results = taskService.getMyTasks("DRAFT", PageRequestDto.builder().page(0).size(20).build());
+        PageResponse<TaskResponse> results = taskService.getMyTasks("DRAFT", PageRequestDto.builder().page(0).size(20).build());
         assertEquals(1, results.getContent().size());
         assertEquals(TaskStatus.DRAFT, results.getContent().get(0).getStatus());
     }
@@ -120,13 +122,13 @@ class Phase2TaskApplicationTests {
         taskApplicationRepository.saveAll(List.of(pendingApp, acceptedApp));
         setAuth(student);
 
-        var results = applicationService.getMyAppliedTasks();
+        List<TaskResponse> results = applicationService.getMyAppliedTasks();
         assertEquals(1, results.size());
         assertEquals(pendingTask.getId(), results.get(0).getId());
     }
 
     private void setAuth(User user) {
-        var auth = new UsernamePasswordAuthenticationToken(user, null, List.of());
+        UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(user, null, List.of());
         SecurityContextHolder.getContext().setAuthentication(auth);
     }
 

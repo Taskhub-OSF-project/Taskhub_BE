@@ -14,13 +14,19 @@ server:
 app:
   jwt:
     secret: ${APP_JWT_SECRET:dev-only-default-secret-change-me-min-32-chars!!}
-    expiration-ms: ${APP_JWT_EXPIRATION_MS:86400000}
-  refresh:
-    expiration-days: ${APP_REFRESH_EXPIRATION_DAYS:30}
+    # Access token: 15 minutes (production standard)
+    expiration-ms: ${APP_JWT_EXPIRATION_MS:900000}
+    # Refresh token: 7 days (production standard)
+    refresh-expiration-days: ${APP_REFRESH_EXPIRATION_DAYS:7}
     max-per-user: ${APP_REFRESH_MAX_PER_USER:5}
   base-url: ${APP_BASE_URL:http://localhost:5173}
   email:
     enabled: ${APP_EMAIL_ENABLED:false}
+  cors:
+    # Comma-separated list of allowed origins for production, e.g. http://localhost:5173,https://taskhub.vn
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:}
+    # Fallback pattern used when allowed-origins is empty (dev only)
+    allowed-origin-patterns: ${APP_CORS_ALLOWED_ORIGIN_PATTERNS:*}
 
 spring.mail:
   host: ${SPRING_MAIL_HOST:smtp.gmail.com}

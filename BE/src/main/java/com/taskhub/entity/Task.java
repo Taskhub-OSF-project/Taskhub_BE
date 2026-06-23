@@ -7,10 +7,11 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+
 @Entity
 @Table(name = "tasks")
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
-public class Task {
+public class Task extends BaseEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -47,11 +48,6 @@ public class Task {
     @Builder.Default
     private List<AcceptanceCriteria> acceptanceCriteria = new ArrayList<>();
 
-    @Builder.Default
-    private LocalDateTime createdAt = LocalDateTime.now();
-
-    private LocalDateTime updatedAt;
-
     @Column(columnDefinition = "TEXT")
     private String submissionAIResultJson;
 
@@ -86,15 +82,4 @@ public class Task {
     @Column(name = "applicant_count", nullable = false)
     @Builder.Default
     private Integer applicantCount = 0;
-
-    @Column(name = "view_count", nullable = false)
-    @Builder.Default
-    private Integer viewCount = 0;
-
-    @Column(name = "is_featured", nullable = false)
-    @Builder.Default
-    private Boolean isFeatured = false;
-
-    @PreUpdate
-    public void onUpdate() { this.updatedAt = LocalDateTime.now(); }
 }

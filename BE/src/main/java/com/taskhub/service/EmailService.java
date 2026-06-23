@@ -87,9 +87,23 @@ public class EmailService {
         sendEmail(toEmail, subject, body);
     }
 
+    @Async
+    public void sendPasswordResetEmail(String toEmail, String name, String resetLink) {
+        String subject = "Đặt lại mật khẩu TaskHub";
+        String body = buildPasswordResetEmail(name, resetLink);
+        sendEmail(toEmail, subject, body);
+    }
+
+    @Async
+    public void sendEmailVerificationEmail(String toEmail, String name, String verificationLink) {
+        String subject = "Xác thực email TaskHub";
+        String body = buildEmailVerificationEmail(name, verificationLink);
+        sendEmail(toEmail, subject, body);
+    }
+
     private void sendEmail(String to, String subject, String body) {
         if (!emailEnabled) {
-            log.info("[EMAIL MOCK] To: {}, Subject: {}", to, subject);
+            log.info("[EMAIL MOCK] emailEnabled=false — would send to: {}, subject: {}", to, subject);
             return;
         }
         try {
@@ -101,8 +115,13 @@ public class EmailService {
             mailSender.send(msg);
             log.info("Email sent to {}: {}", to, subject);
         } catch (Exception e) {
-            log.error("Failed to send email to {}: {}", to, e.getMessage());
+            log.error("Failed to send email to {}: {}", to, e.getMessage(), e);
         }
+    }
+
+    /** Expose configured email-enabled state so callers can decide UX behavior. */
+    public boolean isEmailEnabled() {
+        return emailEnabled;
     }
 
     private String buildWelcomeEmail(String name) {
@@ -199,6 +218,40 @@ public class EmailService {
 
             Tiền đã được cộng vào ví TaskHub của bạn.
             """, studentName, amount, taskTitle);
+    }
+
+    private String buildPasswordResetEmail(String name, String resetLink) {
+        return String.format("""
+            Xin chào %s!
+
+            Chúng tôi nhận được yêu cầu đặt lại mật khẩu cho tài khoản TaskHub của bạn.
+
+            Nhấn vào liên kết bên dưới để đặt lại mật khẩu:
+            %s
+
+            Liên kết này sẽ hết hạn sau 15 phút.
+
+            Nếu bạn không yêu cầu đặt lại mật khẩu, vui lòng bỏ qua email này.
+
+            Đội ngũ TaskHub
+            """, name, resetLink);
+    }
+
+    private String buildEmailVerificationEmail(String name, String verificationLink) {
+        return String.format("""
+            Xin chào %s!
+
+            Cảm ơn bạn đã đăng ký tài khoản TaskHub!
+
+            Vui lòng nhấn vào liên kết bên dưới để xác thực email của bạn:
+            %s
+
+            Liên kết này sẽ hết hạn sau 24 giờ.
+
+            Nếu bạn không đăng ký tài khoản này, vui lòng bỏ qua email này.
+
+            Đội ngũ TaskHub
+            """, name, verificationLink);
     }
 
     private String buildTaskLink(Long taskId) {

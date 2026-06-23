@@ -63,6 +63,7 @@ public class MilestoneService {
                 .status(Milestone.MilestoneStatus.PENDING)
                 .escrowStatus(EscrowStatus.PENDING)
                 .build();
+        milestone.setCreatedBy(currentUser.getId());
         milestone = milestoneRepository.save(milestone);
 
         log.info("Milestone created: id={}, taskId={}, title={}", milestone.getId(), taskId, milestone.getTitle());
@@ -92,6 +93,7 @@ public class MilestoneService {
         milestone.setDescription(req.getDescription());
         milestone.setAmount(req.getAmount());
         milestone.setDueDate(req.getDueDate());
+        milestone.setUpdatedBy(currentUser.getId());
         milestone = milestoneRepository.save(milestone);
 
         return toResponse(milestone);

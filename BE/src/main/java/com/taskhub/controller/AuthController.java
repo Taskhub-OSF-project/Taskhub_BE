@@ -1,11 +1,15 @@
 package com.taskhub.controller;
 
+import com.taskhub.dto.request.ForgotPasswordRequest;
 import com.taskhub.dto.request.LogoutRequest;
 import com.taskhub.dto.request.RefreshTokenRequest;
 import com.taskhub.dto.request.RegisterRequest;
+import com.taskhub.dto.request.ResetPasswordRequest;
+import com.taskhub.dto.request.VerifyEmailRequest;
 import com.taskhub.dto.request.LoginRequest;
 import com.taskhub.dto.response.ApiResponse;
 import com.taskhub.dto.response.AuthResponse;
+import com.taskhub.dto.response.ForgotPasswordResponse;
 import com.taskhub.security.AuthUtil;
 import com.taskhub.service.AuthService;
 import jakarta.validation.Valid;
@@ -46,5 +50,25 @@ public class AuthController {
     public ResponseEntity<ApiResponse<Void>> logoutAll() {
         authService.logoutAll(AuthUtil.getCurrentUser().getId());
         return ResponseEntity.ok(ApiResponse.ok("Logged out from all devices", null));
+    }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<ApiResponse<ForgotPasswordResponse>> forgotPassword(@Valid @RequestBody ForgotPasswordRequest req) {
+        // Always return generic message to prevent email enumeration
+        ForgotPasswordResponse data = authService.forgotPassword(req.getEmail());
+        return ResponseEntity.ok(ApiResponse.ok(
+                "If an account with that email exists, a reset link has been sent", data));
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<ApiResponse<Void>> resetPassword(@Valid @RequestBody ResetPasswordRequest req) {
+        authService.resetPassword(req.getToken(), req.getNewPassword());
+        return ResponseEntity.ok(ApiResponse.ok("Password reset successful. Please login with your new password.", null));
+    }
+
+    @PostMapping("/verify-email")
+    public ResponseEntity<ApiResponse<Void>> verifyEmail(@Valid @RequestBody VerifyEmailRequest req) {
+        authService.verifyEmail(req.getToken());
+        return ResponseEntity.ok(ApiResponse.ok("Email verified successfully", null));
     }
 }

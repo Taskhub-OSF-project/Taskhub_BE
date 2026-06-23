@@ -28,6 +28,5 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
     @Query("SELECT t FROM Task t WHERE t.status IN :statuses AND t.hirer.id != :excludeUserId ORDER BY t.createdAt DESC")
     Page<Task> findAvailableTasks(@Param("statuses") List<TaskStatus> statuses, @Param("excludeUserId") Long excludeUserId, Pageable pageable);
 
-    long countByHirerId(Long hirerId);
-    long countByAssignedToId(Long studentId);
+    Page<Task> findByStatus(TaskStatus status, Pageable pageable);
 }
