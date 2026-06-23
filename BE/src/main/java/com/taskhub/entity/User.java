@@ -83,15 +83,15 @@ public class User {
 
     private java.time.LocalDate dateOfBirth;
 
-    @Column(name = "is_verified", nullable = false)
+    @Column(name = "is_verified", nullable = false, columnDefinition = "boolean default false")
     @Builder.Default
     private Boolean isVerified = false;
 
-    @Column(name = "is_available", nullable = false)
+    @Column(name = "is_available", nullable = false, columnDefinition = "boolean default true")
     @Builder.Default
     private Boolean isAvailable = true;
 
-    @Column(name = "is_banned", nullable = false)
+    @Column(name = "is_banned", nullable = false, columnDefinition = "boolean default false")
     @Builder.Default
     private Boolean isBanned = false;
 

@@ -79,7 +79,7 @@ public class Task extends BaseEntity {
     @Builder.Default
     private List<String> skillsRequired = new ArrayList<>();
 
-    @Column(name = "applicant_count", nullable = false)
+    @Column(name = "applicant_count", nullable = false, columnDefinition = "integer default 0")
     @Builder.Default
     private Integer applicantCount = 0;
 }
