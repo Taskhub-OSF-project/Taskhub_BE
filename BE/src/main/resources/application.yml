@@ -18,7 +18,7 @@ app:
     refresh-expiration-ms: ${APP_JWT_REFRESH_EXPIRATION_MS:604800000}
     issuer: ${APP_JWT_ISSUER:taskhub}
   cors:
-    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:3000}
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:3000,http://192.168.2.4:5173,http://192.168.2.4:8081,http://192.168.2.4:3000}
   mail:
     frontend-base-url: ${APP_FRONTEND_BASE_URL:http://localhost:5173}
   rate-limit:
