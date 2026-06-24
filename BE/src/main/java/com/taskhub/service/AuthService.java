@@ -5,10 +5,12 @@ import com.taskhub.dto.request.RefreshTokenRequest;
 import com.taskhub.dto.request.RegisterRequest;
 import com.taskhub.dto.response.AuthResponse;
 import com.taskhub.dto.response.ForgotPasswordResponse;
+import com.taskhub.entity.OtpToken;
 import com.taskhub.entity.PasswordResetToken;
 import com.taskhub.entity.RefreshToken;
 import com.taskhub.entity.User;
 import com.taskhub.exception.TaskHubException;
+import com.taskhub.repository.OtpTokenRepository;
 import com.taskhub.repository.PasswordResetTokenRepository;
 import com.taskhub.repository.RefreshTokenRepository;
 import com.taskhub.repository.UserRepository;
@@ -23,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import jakarta.servlet.http.HttpServletRequest;
+import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -35,10 +38,13 @@ public class AuthService {
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordResetTokenRepository passwordResetTokenRepository;
+    private final OtpTokenRepository otpTokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final EmailService emailService;
+    private final SmsService smsService;
     private final AuditService auditService;
+    private final SecureRandom secureRandom = new SecureRandom();
 
     @Value("${app.jwt.refresh-expiration-days:7}")
     private int refreshTokenExpirationDays;
@@ -65,6 +71,7 @@ public class AuthService {
                 .major(trimToNull(req.getMajor()))
                 .role(req.getRole())
                 .dateOfBirth(req.getDateOfBirth())
+                .phone(trimToNull(req.getPhone()))
                 .isVerified(false)
                 .build();
         user = userRepository.save(user);
@@ -277,6 +284,151 @@ public class AuthService {
                 .eventType(com.taskhub.entity.SecurityEvent.EventType.PASSWORD_CHANGE)
                 .outcome("SUCCESS")
                 .build());
+    }
+
+    // ── Phone Auth ───────────────────────────────────────────────
+
+    @Transactional
+    public AuthResponse loginByPhone(String phone, String password) {
+        User user = userRepository.findByPhone(phone).orElse(null);
+        if (user == null) {
+            log.warn("[AUTH] Login by phone failed — phone not found: {}", maskPhone(phone));
+            auditService.logLoginFailure(phone, "phone_not_found", getRequest());
+            throw TaskHubException.badRequest("Invalid credentials");
+        }
+        if (!passwordEncoder.matches(password, user.getPassword())) {
+            log.warn("[AUTH] Login by phone failed — wrong password for phone: {}", maskPhone(phone));
+            auditService.logLoginFailure(phone, "wrong_password", getRequest());
+            throw TaskHubException.badRequest("Invalid credentials");
+        }
+        log.info("[AUTH] Phone login success: userId={}, phone={}", user.getId(), maskPhone(phone));
+        auditService.logLoginSuccess(user, getRequest());
+        return buildAuthResponse(user);
+    }
+
+    @Transactional
+    public void requestPhoneOtp(String phone, String type) {
+        if ("REGISTRATION".equals(type) && userRepository.existsByPhone(phone)) {
+            throw TaskHubException.badRequest("Phone number already registered");
+        }
+        // Delete any existing unused OTPs for this phone+type
+        otpTokenRepository.deleteActiveByPhoneAndType(phone, type);
+        String code = generateOtp();
+        OtpToken otp = OtpToken.builder()
+                .phone(phone)
+                .code(code)
+                .type(type)
+                .expiresAt(LocalDateTime.now().plusMinutes(5))
+                .used(false)
+                .build();
+        otpTokenRepository.save(otp);
+        smsService.sendOtp(phone, code);
+        log.info("[AUTH] OTP requested: phone={}, type={}, smtpEnabled={}", maskPhone(phone), type, smsService != null);
+    }
+
+    @Transactional
+    public AuthResponse verifyPhoneOtpAndRegister(String phone, String code, RegisterRequest registerReq) {
+        String maskedPhone = maskPhone(phone);
+        OtpToken otp = otpTokenRepository.findValidOtp(phone, "REGISTRATION")
+                .orElseThrow(() -> {
+                    log.warn("[AUTH] OTP verification failed — no valid token for phone: {}", maskedPhone);
+                    return TaskHubException.badRequest("Invalid or expired OTP");
+                });
+
+        if (!otp.getCode().equals(code)) {
+            log.warn("[AUTH] OTP verification failed — wrong code for phone: {}", maskedPhone);
+            throw TaskHubException.badRequest("Invalid or expired OTP");
+        }
+
+        if (userRepository.existsByEmail(registerReq.getEmail())) {
+            throw TaskHubException.badRequest("Email already registered");
+        }
+
+        otp.setUsed(true);
+        otpTokenRepository.save(otp);
+
+        User user = User.builder()
+                .email(registerReq.getEmail())
+                .password(passwordEncoder.encode(registerReq.getPassword()))
+                .fullName(registerReq.getFullName())
+                .university(trimToNull(registerReq.getUniversity()))
+                .major(trimToNull(registerReq.getMajor()))
+                .role(registerReq.getRole())
+                .dateOfBirth(registerReq.getDateOfBirth())
+                .phone(phone)
+                .isVerified(true)
+                .build();
+        user = userRepository.save(user);
+
+        log.info("[AUTH] Phone-OTP registration success: userId={}, phone={}", user.getId(), maskedPhone);
+        auditService.logRegistration(user, getRequest());
+        return buildAuthResponse(user);
+    }
+
+    @Transactional
+    public ForgotPasswordResponse forgotPasswordByPhone(String phone) {
+        var optUser = userRepository.findByPhone(phone);
+        if (optUser.isEmpty()) {
+            log.warn("[AUTH] Password reset by phone requested for unknown phone: {}", maskPhone(phone));
+            auditService.logPasswordResetRequest(phone, false, getRequest());
+            return ForgotPasswordResponse.builder().emailSent(false).build();
+        }
+
+        User user = optUser.get();
+        String code = generateOtp();
+        OtpToken otp = OtpToken.builder()
+                .phone(phone)
+                .code(code)
+                .type("RECOVERY")
+                .expiresAt(LocalDateTime.now().plusMinutes(5))
+                .used(false)
+                .build();
+        otpTokenRepository.save(otp);
+        smsService.sendOtpRecovery(phone, code);
+
+        log.info("[AUTH] Password reset by phone: userId={}, phone={}", user.getId(), maskPhone(phone));
+        auditService.logPasswordResetRequest(phone, true, getRequest());
+        return ForgotPasswordResponse.builder().emailSent(true).build();
+    }
+
+    @Transactional
+    public void resetPasswordWithOtp(String phone, String code, String newPassword) {
+        String maskedPhone = maskPhone(phone);
+        OtpToken otp = otpTokenRepository.findValidOtp(phone, "RECOVERY")
+                .orElseThrow(() -> {
+                    log.warn("[AUTH] Password reset with OTP failed — no valid token for phone: {}", maskedPhone);
+                    return TaskHubException.badRequest("Invalid or expired OTP");
+                });
+
+        if (!otp.getCode().equals(code)) {
+            log.warn("[AUTH] Password reset with OTP failed — wrong code for phone: {}", maskedPhone);
+            throw TaskHubException.badRequest("Invalid or expired OTP");
+        }
+
+        User user = userRepository.findByPhone(phone)
+                .orElseThrow(() -> TaskHubException.notFound("User not found"));
+
+        otp.setUsed(true);
+        otpTokenRepository.save(otp);
+
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+
+        refreshTokenRepository.revokeAllUserTokens(user.getId(), "otp-reset-" + user.getId());
+        log.info("[AUTH] Password reset with OTP successful: userId={}, phone={}", user.getId(), maskedPhone);
+        auditService.logPasswordResetSuccess(user, getRequest());
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────
+
+    private String generateOtp() {
+        int code = secureRandom.nextInt(900000) + 100000;
+        return String.valueOf(code);
+    }
+
+    private String maskPhone(String phone) {
+        if (phone == null || phone.length() < 4) return "***";
+        return phone.substring(0, phone.length() - 4).replaceAll("[0-9]", "*") + phone.substring(phone.length() - 4);
     }
 
     private AuthResponse buildAuthResponse(User user) {

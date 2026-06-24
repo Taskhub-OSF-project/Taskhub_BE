@@ -2,20 +2,25 @@ package com.taskhub.service;
 
 import com.taskhub.dto.PageRequestDto;
 import com.taskhub.dto.PageResponse;
+import com.taskhub.dto.request.BroadcastNotificationRequest;
 import com.taskhub.dto.response.NotificationResponse;
 import com.taskhub.entity.Notification;
 import com.taskhub.entity.User;
 import com.taskhub.enums.NotificationType;
+import com.taskhub.enums.Role;
 import com.taskhub.exception.TaskHubException;
 import com.taskhub.repository.NotificationRepository;
 import com.taskhub.repository.UserRepository;
-import com.taskhub.security.AuthUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -23,147 +28,111 @@ import java.util.List;
 @Slf4j
 public class NotificationService {
     private final NotificationRepository notificationRepository;
-    private final WebSocketPushService pushService;
-    private final EmailService emailService;
     private final UserRepository userRepository;
 
     @Transactional
-    public NotificationResponse notify(Long userId, NotificationType type, String title, String message, String actionUrl, Long taskId) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> TaskHubException.notFound("User not found"));
-
-        Notification notification = Notification.builder()
-                .user(user)
+    public void notify(Long userId, NotificationType type, String title, String body, String link, Long relatedId) {
+        notificationRepository.save(Notification.builder()
+                .userId(userId)
                 .type(type)
                 .title(title)
-                .message(message)
-                .actionUrl(actionUrl)
-                .taskId(taskId)
-                .build();
-
-        notification = notificationRepository.save(notification);
-        NotificationResponse response = toResponse(notification);
-
-        pushService.pushToUser(userId, "NOTIFICATION", response);
-        return response;
+                .body(body)
+                .link(link)
+                .relatedId(relatedId)
+                .isRead(false)
+                .createdAt(LocalDateTime.now())
+                .build());
     }
 
     @Transactional
-    private NotificationResponse notifyAndEmail(Long userId, NotificationType type, String title, String message,
-            String actionUrl, Long taskId, String emailContent) {
-        NotificationResponse response = notify(userId, type, title, message, actionUrl, taskId);
-        if (emailContent != null) {
-            userRepository.findById(userId).ifPresent(u ->
-                    emailService.sendApplicationAcceptedEmail(u.getEmail(), u.getFullName(), emailContent, taskId));
-        }
-        return response;
-    }
-
-    @Transactional(readOnly = true)
-    public PageResponse<NotificationResponse> getMyNotifications(PageRequestDto pageReq) {
-        User user = AuthUtil.getCurrentUser();
-        Page<Notification> page = notificationRepository.findByUserIdOrderByCreatedAtDesc(user.getId(),
-                org.springframework.data.domain.PageRequest.of(
-                        pageReq.getPage(),
-                        Math.min(pageReq.getSize(), 50),
-                        Sort.by(Sort.Direction.DESC, "createdAt")));
-        return PageResponse.<NotificationResponse>builder()
-                .content(page.getContent().stream().map(this::toResponse).toList())
-                .page(page.getNumber()).size(page.getSize())
-                .totalElements(page.getTotalElements()).totalPages(page.getTotalPages())
-                .first(page.isFirst()).last(page.isLast())
-                .hasNext(page.hasNext()).hasPrevious(page.hasPrevious())
-                .build();
-    }
-
-    @Transactional(readOnly = true)
-    public List<NotificationResponse> getUnreadNotifications() {
-        User user = AuthUtil.getCurrentUser();
-        return notificationRepository.findByUserIdAndIsReadFalseOrderByCreatedAtDesc(user.getId())
-                .stream().map(this::toResponse).toList();
-    }
-
-    @Transactional(readOnly = true)
-    public long getUnreadCount() {
-        User user = AuthUtil.getCurrentUser();
-        return notificationRepository.countByUserIdAndIsReadFalse(user.getId());
+    public void notifyApplicationReceived(Long hirerId, String studentName, String taskTitle, Long taskId) {
+        notify(hirerId, NotificationType.TASK_APPLICATION_RECEIVED,
+                "Ứng viên mới cho công việc của bạn",
+                studentName + " vừa ứng tuyển vào công việc \"" + taskTitle + "\".",
+                "/tasks/" + taskId, taskId);
     }
 
     @Transactional
-    public void markAsRead(Long notificationId) {
-        User user = AuthUtil.getCurrentUser();
-        int updated = notificationRepository.markAsRead(notificationId, user.getId());
-        if (updated == 0) {
-            throw TaskHubException.notFound("Notification not found");
-        }
-    }
-
-    @Transactional
-    public void markAllAsRead() {
-        User user = AuthUtil.getCurrentUser();
-        notificationRepository.markAllAsRead(user.getId());
-    }
-
-    public NotificationResponse notifyTaskAssigned(Long studentId, String taskTitle, Long taskId) {
-        return notify(studentId, NotificationType.TASK_ASSIGNED,
+    public void notifyTaskAssigned(Long studentId, String taskTitle, Long taskId) {
+        notify(studentId, NotificationType.TASK_ASSIGNED,
                 "Bạn đã được nhận công việc",
-                "Bạn đã được nhận cho công việc: " + taskTitle,
-                "/student/tasks/" + taskId, taskId);
+                "Bạn đã được nhận công việc: \"" + taskTitle + "\".",
+                "/tasks/" + taskId, taskId);
     }
 
-    public NotificationResponse notifyApplicationReceived(Long hirerId, String studentName, String taskTitle, Long taskId) {
-        return notify(hirerId, NotificationType.TASK_APPLICATION_RECEIVED,
-                "Đơn ứng tuyển mới",
-                studentName + " đã ứng tuyển công việc: " + taskTitle,
-                "/hirer/tasks/" + taskId, taskId);
+    @Transactional
+    public void notifyApplicationAccepted(Long studentId, String taskTitle, Long taskId) {
+        notify(studentId, NotificationType.TASK_APPLICATION_ACCEPTED,
+                "Đơn ứng tuyển được chấp nhận",
+                "Đơn ứng tuyển của bạn cho \"" + taskTitle + "\" đã được chấp nhận.",
+                "/tasks/" + taskId, taskId);
     }
 
-    public NotificationResponse notifyApplicationAccepted(Long studentId, String taskTitle, Long taskId) {
-        return notifyAndEmail(studentId, NotificationType.TASK_APPLICATION_ACCEPTED,
-                "Đơn ứng tuyển được chấp nhận!",
-                "Bạn đã được nhận cho công việc: " + taskTitle,
-                "/student/tasks/" + taskId, taskId, taskTitle);
+    public PageResponse<NotificationResponse> listForUser(Long userId, PageRequestDto req) {
+        Page<Notification> page = notificationRepository.findByUserIdOrderByCreatedAtDesc(
+                userId,
+                PageRequest.of(req.getPage(), Math.min(req.getSize(), 100)));
+        List<NotificationResponse> items = page.getContent().stream()
+                .map(NotificationResponse::from)
+                .toList();
+        return PageResponse.of(items, page.getNumber(), page.getSize(), page.getTotalElements());
     }
 
-    public NotificationResponse notifySubmissionReceived(Long hirerId, String taskTitle, Long taskId) {
-        return notify(hirerId, NotificationType.TASK_SUBMITTED,
-                "Bài nộp mới",
-                "Sinh viên đã nộp bài cho: " + taskTitle,
-                "/hirer/submissions", taskId);
+    public long unreadCount(Long userId) {
+        return notificationRepository.countByUserIdAndIsReadFalse(userId);
     }
 
-    public NotificationResponse notifyRevisionRequested(Long studentId, String taskTitle, Long taskId) {
-        return notify(studentId, NotificationType.TASK_REVISION_REQUESTED,
-                "Yêu cầu chỉnh sửa",
-                "Nhà tuyển dụng yêu cầu chỉnh sửa cho: " + taskTitle,
-                "/student/tasks/" + taskId, taskId);
+    @Transactional
+    public void markRead(Long notificationId, Long userId) {
+        int updated = notificationRepository.markRead(notificationId, userId, LocalDateTime.now());
+        if (updated == 0) {
+            throw new TaskHubException("Notification not found", HttpStatus.NOT_FOUND);
+        }
     }
 
-    public NotificationResponse notifyTaskCompleted(Long studentId, String taskTitle, Long taskId) {
-        return notify(studentId, NotificationType.TASK_COMPLETED,
-                "Công việc hoàn thành",
-                "Công việc '" + taskTitle + "' đã được xác nhận hoàn thành!",
-                "/student/tasks/" + taskId, taskId);
+    @Transactional
+    public int markAllRead(Long userId) {
+        return notificationRepository.markAllRead(userId, LocalDateTime.now());
     }
 
-    public NotificationResponse notifyPaymentReleased(Long studentId, String taskTitle, Long taskId) {
-        return notify(studentId, NotificationType.PAYMENT_RECEIVED,
-                "Thanh toán đã được giải ngân",
-                "Bạn đã nhận được thanh toán cho công việc: " + taskTitle,
-                "/student/wallet", taskId);
-    }
+    @Transactional
+    public int broadcast(BroadcastNotificationRequest req) {
+        Role targetRole = null;
+        if (req.getTargetRole() != null && !req.getTargetRole().isBlank()) {
+            try {
+                targetRole = Role.valueOf(req.getTargetRole().toUpperCase());
+            } catch (IllegalArgumentException e) {
+                throw new TaskHubException("Invalid targetRole: " + req.getTargetRole(), HttpStatus.BAD_REQUEST);
+            }
+        }
 
-    private NotificationResponse toResponse(Notification n) {
-        return NotificationResponse.builder()
-                .id(n.getId())
-                .type(n.getType())
-                .title(n.getTitle())
-                .message(n.getMessage())
-                .isRead(n.getIsRead())
-                .readAt(n.getReadAt())
-                .actionUrl(n.getActionUrl())
-                .taskId(n.getTaskId())
-                .createdAt(n.getCreatedAt())
-                .build();
+        List<User> recipients = (targetRole == null)
+                ? userRepository.findAll().stream()
+                        .filter(u -> u.getRole() != Role.ADMIN)
+                        .toList()
+                : userRepository.findByRole(targetRole, PageRequest.of(0, 10_000))
+                        .getContent().stream()
+                        .filter(u -> u.getRole() != Role.ADMIN)
+                        .toList();
+
+        NotificationType type = req.getType() != null ? req.getType() : NotificationType.SYSTEM_ANNOUNCEMENT;
+        LocalDateTime now = LocalDateTime.now();
+        List<Notification> batch = new ArrayList<>(recipients.size());
+        for (User u : recipients) {
+            batch.add(Notification.builder()
+                    .userId(u.getId())
+                    .type(type)
+                    .title(req.getTitle())
+                    .body(req.getBody())
+                    .link(req.getLink())
+                    .relatedId(req.getRelatedId())
+                    .isRead(false)
+                    .createdAt(now)
+                    .build());
+        }
+        notificationRepository.saveAll(batch);
+        log.info("Broadcast sent to {} users (targetRole={})", batch.size(),
+                req.getTargetRole() == null ? "ALL" : req.getTargetRole());
+        return batch.size();
     }
 }

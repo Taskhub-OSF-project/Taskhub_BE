@@ -1,12 +1,16 @@
 package com.taskhub.controller;
 
 import com.taskhub.dto.request.ForgotPasswordRequest;
+import com.taskhub.dto.request.LoginPhoneRequest;
 import com.taskhub.dto.request.LogoutRequest;
 import com.taskhub.dto.request.RefreshTokenRequest;
 import com.taskhub.dto.request.RegisterRequest;
+import com.taskhub.dto.request.ResetPasswordOtpRequest;
 import com.taskhub.dto.request.ResetPasswordRequest;
 import com.taskhub.dto.request.VerifyEmailRequest;
 import com.taskhub.dto.request.LoginRequest;
+import com.taskhub.dto.request.VerifyPhoneOtpRequest;
+import com.taskhub.dto.request.PhoneOtpRequest;
 import com.taskhub.dto.response.ApiResponse;
 import com.taskhub.dto.response.AuthResponse;
 import com.taskhub.dto.response.ForgotPasswordResponse;
@@ -70,5 +74,38 @@ public class AuthController {
     public ResponseEntity<ApiResponse<Void>> verifyEmail(@Valid @RequestBody VerifyEmailRequest req) {
         authService.verifyEmail(req.getToken());
         return ResponseEntity.ok(ApiResponse.ok("Email verified successfully", null));
+    }
+
+    // ── Phone Auth ─────────────────────────────────────────────────
+
+    @PostMapping("/login-phone")
+    public ResponseEntity<ApiResponse<AuthResponse>> loginByPhone(@Valid @RequestBody LoginPhoneRequest req) {
+        return ResponseEntity.ok(ApiResponse.ok("Login successful", authService.loginByPhone(req.getPhone(), req.getPassword())));
+    }
+
+    @PostMapping("/request-phone-otp")
+    public ResponseEntity<ApiResponse<Void>> requestPhoneOtp(@Valid @RequestBody PhoneOtpRequest req) {
+        authService.requestPhoneOtp(req.getPhone(), req.getType());
+        return ResponseEntity.ok(ApiResponse.ok("OTP sent to your phone", null));
+    }
+
+    @PostMapping("/verify-phone-otp")
+    public ResponseEntity<ApiResponse<AuthResponse>> verifyPhoneOtp(@Valid @RequestBody VerifyPhoneOtpRequest req) {
+        AuthResponse data = authService.verifyPhoneOtpAndRegister(
+                req.getPhone(), req.getCode(), req.getRegisterRequest());
+        return ResponseEntity.ok(ApiResponse.ok("Registration successful", data));
+    }
+
+    @PostMapping("/forgot-password-phone")
+    public ResponseEntity<ApiResponse<ForgotPasswordResponse>> forgotPasswordByPhone(@Valid @RequestBody PhoneOtpRequest req) {
+        ForgotPasswordResponse data = authService.forgotPasswordByPhone(req.getPhone());
+        return ResponseEntity.ok(ApiResponse.ok(
+                "If an account with that phone exists, an OTP has been sent", data));
+    }
+
+    @PostMapping("/reset-password-otp")
+    public ResponseEntity<ApiResponse<Void>> resetPasswordWithOtp(@Valid @RequestBody ResetPasswordOtpRequest req) {
+        authService.resetPasswordWithOtp(req.getPhone(), req.getCode(), req.getNewPassword());
+        return ResponseEntity.ok(ApiResponse.ok("Password reset successful. Please login with your new password.", null));
     }
 }

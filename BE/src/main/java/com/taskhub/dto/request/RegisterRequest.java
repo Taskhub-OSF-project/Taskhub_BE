@@ -24,4 +24,6 @@ public class RegisterRequest {
     private Role role;
 
     private LocalDate dateOfBirth;
+
+    private String phone;
 }

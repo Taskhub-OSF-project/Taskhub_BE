@@ -7,28 +7,33 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "notifications", indexes = {
-        @Index(name = "idx_notification_user", columnList = "user_id"),
-        @Index(name = "idx_notification_user_created", columnList = "user_id, created_at DESC")
+    @Index(name = "idx_notifications_user_read", columnList = "user_id,is_read"),
+    @Index(name = "idx_notifications_user_created", columnList = "user_id,created_at"),
 })
-@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
+@Data @Builder @NoArgsConstructor @AllArgsConstructor
 public class Notification {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
-    private User user;
+    @Column(name = "user_id", nullable = false)
+    private Long userId;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 50)
+    @Column(nullable = false, length = 40)
     private NotificationType type;
 
-    @Column(nullable = false, length = 255)
+    @Column(nullable = false, length = 200)
     private String title;
 
-    @Column(columnDefinition = "TEXT", nullable = false)
-    private String message;
+    @Column(nullable = false, columnDefinition = "TEXT")
+    private String body;
+
+    @Column(length = 300)
+    private String link;
+
+    @Column(name = "related_id")
+    private Long relatedId;
 
     @Column(name = "is_read", nullable = false)
     @Builder.Default
@@ -37,16 +42,12 @@ public class Notification {
     @Column(name = "read_at")
     private LocalDateTime readAt;
 
-    @Column(name = "action_url", length = 500)
-    private String actionUrl;
+    @Column(name = "created_at", nullable = false)
+    private LocalDateTime createdAt;
 
-    @Column(name = "task_id")
-    private Long taskId;
-
-    @Column(columnDefinition = "TEXT")
-    private String metadata;
-
-    @Column(nullable = false, updatable = false)
-    @Builder.Default
-    private LocalDateTime createdAt = LocalDateTime.now();
+    @PrePersist
+    void onCreate() {
+        if (createdAt == null) createdAt = LocalDateTime.now();
+        if (isRead == null) isRead = false;
+    }
 }
