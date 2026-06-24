@@ -1,0 +1,40 @@
+spring:
+  profiles:
+    active: test
+  datasource:
+    url: jdbc:h2:mem:taskhub_test;DB_CLOSE_DELAY=-1;MODE=PostgreSQL
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+  flyway:
+    enabled: false
+
+app:
+  jwt:
+    secret: test-jwt-secret-minimum-32-characters-long!!
+    access-expiration-ms: 900000
+    refresh-expiration-ms: 604800000
+    issuer: taskhub-test
+  cors:
+    allowed-origins: http://localhost:5173
+  mail:
+    frontend-base-url: http://localhost:5173
+  admin:
+    enabled: false
+    email: admin@test.com
+    password: TestAdmin123!
+    full-name: Test Admin
+  rate-limit:
+    login-per-minute: 100
+    forgot-password-per-hour: 50
+    refresh-per-minute: 300
+
+supabase:
+  url: http://localhost
+  service-role-key: test-key

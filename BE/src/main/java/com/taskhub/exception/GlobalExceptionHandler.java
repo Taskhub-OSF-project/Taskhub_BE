@@ -2,6 +2,9 @@ package com.taskhub.exception;
 
 import com.taskhub.dto.response.ApiResponse;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
@@ -15,6 +18,21 @@ import org.springframework.web.multipart.support.MissingServletRequestPartExcept
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(AuthenticationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleAuth(AuthenticationException ex) {
+        return ResponseEntity.status(401).body(ApiResponse.error("Authentication failed", "UNAUTHORIZED", null));
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleAccessDenied(AccessDeniedException ex) {
+        return ResponseEntity.status(403).body(ApiResponse.error("Access denied", "FORBIDDEN", null));
+    }
+
+    @ExceptionHandler(BadCredentialsException.class)
+    public ResponseEntity<ApiResponse<Void>> handleBadCredentials(BadCredentialsException ex) {
+        return ResponseEntity.status(401).body(ApiResponse.error("Invalid credentials", "UNAUTHORIZED", null));
+    }
 
     /**
      * Bắt TaskHubException để trả đúng HTTP status và errorCode.

@@ -2,7 +2,9 @@ package com.taskhub.service;
 
 import com.taskhub.dto.PageRequestDto;
 import com.taskhub.dto.PageResponse;
-import com.taskhub.dto.request.UserProfileUpdateRequest;
+import com.taskhub.dto.request.ChangePasswordRequest;
+import com.taskhub.dto.request.UpdateProfileRequest;
+import com.taskhub.dto.response.AdminDashboardResponse;
 import com.taskhub.dto.response.UserProfileResponse;
 import com.taskhub.entity.Task;
 import com.taskhub.entity.User;
@@ -10,17 +12,18 @@ import com.taskhub.enums.ReviewType;
 import com.taskhub.enums.Role;
 import com.taskhub.enums.TaskStatus;
 import com.taskhub.exception.TaskHubException;
+import com.taskhub.repository.RefreshTokenRepository;
 import com.taskhub.repository.ReviewRepository;
 import com.taskhub.repository.TaskRepository;
 import com.taskhub.repository.UserRepository;
-import com.taskhub.security.AuthUtil;
-import com.taskhub.dto.response.AdminDashboardResponse;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.Period;
@@ -28,111 +31,64 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class UserService {
     private final UserRepository userRepository;
     private final TaskRepository taskRepository;
     private final ReviewRepository reviewRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final RefreshTokenRepository refreshTokenRepository;
+    private final AuditService auditService;
 
-    @Transactional(readOnly = true)
-    public UserProfileResponse getMyProfile() {
-        User current = AuthUtil.getCurrentUser();
-        return buildProfile(current.getId());
-    }
-
-    @Transactional(readOnly = true)
     public UserProfileResponse getProfile(Long userId) {
-        userRepository.findById(userId).orElseThrow(() -> TaskHubException.notFound("User not found"));
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> TaskHubException.notFound("User not found"));
         return buildProfile(userId);
     }
 
     @Transactional
-    public UserProfileResponse updateMyProfile(UserProfileUpdateRequest req) {
-        User current = AuthUtil.getCurrentUser();
-        User user = userRepository.findById(current.getId())
+    public UserProfileResponse updateProfile(Long userId, UpdateProfileRequest req) {
+        User user = userRepository.findById(userId)
                 .orElseThrow(() -> TaskHubException.notFound("User not found"));
 
-        if (req.getFullName() != null && !req.getFullName().isBlank()) {
-            user.setFullName(req.getFullName().trim());
+        if (req.getFullName() != null) {
+            String name = req.getFullName().trim();
+            if (name.isBlank()) throw TaskHubException.badRequest("Full name cannot be blank");
+            user.setFullName(name);
         }
-        // Support both 'school' (FE convention) and 'university' field
-        String schoolValue = req.getSchool() != null ? req.getSchool() : req.getUniversity();
-        user.setUniversity(trimToNull(schoolValue));
-        user.setMajor(trimToNull(req.getMajor()));
-        user.setBio(trimToNull(req.getBio()));
-        user.setExperience(trimToNull(req.getExperience()));
-        user.setPortfolioUrl(trimToNull(req.getPortfolioUrl()));
-        user.setPhone(trimToNull(req.getPhone()));
-        user.setTitle(trimToNull(req.getTitle()));
-        user.setHourlyRate(trimToNull(req.getHourlyRate()));
-        user.setAvailability(trimToNull(req.getAvailability()));
-        user.setAvatarUrl(trimToNull(req.getAvatarUrl()));
-        if (req.getSkills() != null) user.setSkills(req.getSkills());
-        if (req.getLanguages() != null) user.setLanguages(req.getLanguages());
-        if (req.getCertifications() != null) user.setCertifications(req.getCertifications());
-        if (req.getDateOfBirth() != null) user.setDateOfBirth(req.getDateOfBirth());
+        if (req.getUniversity() != null) {
+            user.setUniversity(trimToNull(req.getUniversity()));
+        }
+        if (req.getMajor() != null) {
+            user.setMajor(trimToNull(req.getMajor()));
+        }
 
-        user = userRepository.save(user);
-        return buildProfile(user.getId());
-    }
-
-    @Transactional
-    public void setAvailability(boolean available) {
-        User current = AuthUtil.getCurrentUser();
-        User user = userRepository.findById(current.getId())
-                .orElseThrow(() -> TaskHubException.notFound("User not found"));
-        user.setIsAvailable(available);
         userRepository.save(user);
+        auditService.record("PROFILE_UPDATE", user.getEmail(), "Profile updated");
+        return buildProfile(userId);
     }
 
     @Transactional
-    public UserProfileResponse changeUserRole(Long userId, Role newRole) {
+    public void changePassword(Long userId, ChangePasswordRequest req) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> TaskHubException.notFound("User not found"));
-        user.setRole(newRole);
-        user = userRepository.save(user);
-        log.info("Admin changed role of user {} to {}", userId, newRole);
-        return buildProfile(user.getId());
-    }
 
-    @Transactional
-    public void setUserBanned(Long userId, boolean banned) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> TaskHubException.notFound("User not found"));
-        user.setIsBanned(banned);
+        if (!passwordEncoder.matches(req.getCurrentPassword(), user.getPassword())) {
+            auditService.record("PASSWORD_CHANGE_FAILURE", user.getEmail(), "Current password incorrect");
+            throw TaskHubException.badRequest("Current password is incorrect");
+        }
+
+        if (passwordEncoder.matches(req.getNewPassword(), user.getPassword())) {
+            throw TaskHubException.badRequest("New password must differ from current password");
+        }
+
+        user.setPassword(passwordEncoder.encode(req.getNewPassword()));
         userRepository.save(user);
-        log.info("Admin {} user {}", banned ? "banned" : "unbanned", userId);
+        refreshTokenRepository.revokeAllByUserId(userId);
+
+        auditService.record("PASSWORD_CHANGE_SUCCESS", user.getEmail(), "Password changed successfully");
     }
 
-    @Transactional(readOnly = true)
-    public PageResponse<UserProfileResponse> getAllUsers(PageRequestDto pageReq) {
-        var springPage = org.springframework.data.domain.PageRequest.of(
-                pageReq.getPage(), Math.min(pageReq.getSize(), 50),
-                Sort.by(Sort.Direction.DESC, "createdAt"));
-        Page<User> page = userRepository.findAll(springPage);
-        return PageResponse.<UserProfileResponse>builder()
-                .content(page.getContent().stream().map(u -> buildProfile(u.getId())).toList())
-                .page(page.getNumber()).size(page.getSize())
-                .totalElements(page.getTotalElements()).totalPages(page.getTotalPages())
-                .first(page.isFirst()).last(page.isLast())
-                .hasNext(page.hasNext()).hasPrevious(page.hasPrevious())
-                .build();
-    }
-
-    @Transactional(readOnly = true)
-    public PageResponse<UserProfileResponse> getUsersByRole(Role role, PageRequestDto pageReq) {
-        var springPage = org.springframework.data.domain.PageRequest.of(
-                pageReq.getPage(), Math.min(pageReq.getSize(), 50),
-                Sort.by(Sort.Direction.DESC, "createdAt"));
-        Page<User> page = userRepository.findByRole(role, springPage);
-        return PageResponse.<UserProfileResponse>builder()
-                .content(page.getContent().stream().map(u -> buildProfile(u.getId())).toList())
-                .page(page.getNumber()).size(page.getSize())
-                .totalElements(page.getTotalElements()).totalPages(page.getTotalPages())
-                .first(page.isFirst()).last(page.isLast())
-                .hasNext(page.hasNext()).hasPrevious(page.hasPrevious())
-                .build();
-    }
+    // ── Admin Methods ────────────────────────────────────────────
 
     @Transactional(readOnly = true)
     public AdminDashboardResponse getAdminDashboardStats() {
@@ -154,6 +110,53 @@ public class UserService {
                 .completedTasks(completedTaskList.size())
                 .disputedTasks(disputedTasks)
                 .totalPlatformVolume(totalVolume)
+                .build();
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<UserProfileResponse> getUsersByRole(Role role, PageRequestDto pageReq) {
+        var springPage = PageRequest.of(
+                pageReq.getPage(), Math.min(pageReq.getSize(), 50),
+                Sort.by(Sort.Direction.DESC, "createdAt"));
+        Page<User> page = userRepository.findByRole(role, springPage);
+        return toPageResponse(page);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<UserProfileResponse> getAllUsers(PageRequestDto pageReq) {
+        var springPage = PageRequest.of(
+                pageReq.getPage(), Math.min(pageReq.getSize(), 50),
+                Sort.by(Sort.Direction.DESC, "createdAt"));
+        Page<User> page = userRepository.findAll(springPage);
+        return toPageResponse(page);
+    }
+
+    @Transactional
+    public UserProfileResponse changeUserRole(Long userId, Role newRole) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> TaskHubException.notFound("User not found"));
+        user.setRole(newRole);
+        user = userRepository.save(user);
+        return buildProfile(user.getId());
+    }
+
+    @Transactional
+    public void setUserBanned(Long userId, boolean banned) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> TaskHubException.notFound("User not found"));
+        user.setIsBanned(banned);
+        userRepository.save(user);
+    }
+
+    // ── Helpers ─────────────────────────────────────────────────
+
+    private PageResponse<UserProfileResponse> toPageResponse(Page<User> page) {
+        return PageResponse.<UserProfileResponse>builder()
+                .content(page.getContent().stream().map(u -> buildProfile(u.getId())).toList())
+                .page(page.getNumber()).size(page.getSize())
+                .totalElements(page.getTotalElements()).totalPages(page.getTotalPages())
+                .first(page.isFirst()).last(page.isLast())
+                .hasNext(page.hasNext()).hasPrevious(page.hasPrevious())
                 .build();
     }
 
@@ -179,7 +182,8 @@ public class UserService {
                 .title(user.getTitle()).hourlyRate(user.getHourlyRate())
                 .availability(user.getAvailability()).languages(user.getLanguages())
                 .certifications(user.getCertifications()).avatarUrl(user.getAvatarUrl())
-                .role(user.getRole().name()).walletBalance(user.getWalletBalance())
+                .role(user.getRole().name()).roleEnum(user.getRole())
+                .walletBalance(user.getWalletBalance())
                 .isVerified(user.getIsVerified()).isAvailable(user.getIsAvailable())
                 .isBanned(user.getIsBanned())
                 .dateOfBirth(user.getDateOfBirth())
@@ -192,6 +196,8 @@ public class UserService {
                 .totalEarnings(totalEarnings)
                 .completedTasksAsFreelancer(completedFreelancer).completedTasksAsHirer(completedHirer)
                 .memberSince(user.getCreatedAt() != null ? user.getCreatedAt().toLocalDate().toString() : null)
+                .emailVerified(user.isEmailVerified())
+                .createdAt(user.getCreatedAt())
                 .build();
     }
 

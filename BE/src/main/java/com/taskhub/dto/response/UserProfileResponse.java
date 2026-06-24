@@ -1,9 +1,10 @@
 package com.taskhub.dto.response;
 
+import com.taskhub.enums.Role;
 import lombok.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.Period;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Data @Builder @NoArgsConstructor @AllArgsConstructor
@@ -39,4 +40,7 @@ public class UserProfileResponse {
     private Long completedTasksAsFreelancer;
     private Long completedTasksAsHirer;
     private String memberSince;
+    private Role roleEnum;
+    private boolean emailVerified;
+    private LocalDateTime createdAt;
 }

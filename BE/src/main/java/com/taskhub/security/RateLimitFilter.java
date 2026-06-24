@@ -1,86 +1,85 @@
 package com.taskhub.security;
 
+import com.taskhub.config.RateLimitProperties;
+import com.taskhub.dto.response.ApiResponse;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
-import io.github.bucket4j.Refill;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.extern.slf4j.Slf4j;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * IP-based rate limiting for sensitive auth endpoints using Bucket4j token buckets.
+ */
 @Component
-@Slf4j
+@RequiredArgsConstructor
 public class RateLimitFilter extends OncePerRequestFilter {
+    private final RateLimitProperties rateLimitProperties;
+    private final ObjectMapper objectMapper;
 
-    private final Map<String, Bucket> authBuckets = new ConcurrentHashMap<>();
+    private final Map<String, Bucket> loginBuckets = new ConcurrentHashMap<>();
+    private final Map<String, Bucket> forgotPasswordBuckets = new ConcurrentHashMap<>();
+    private final Map<String, Bucket> refreshBuckets = new ConcurrentHashMap<>();
 
-    private static final int AUTH_REQUESTS_PER_MINUTE = 20;
-    private static final int AUTH_REQUESTS_PER_HOUR = 100;
-    private static final int LOGIN_REQUESTS_PER_MINUTE = 5;
-
-    private Bucket createAuthBucket() {
-        Bandwidth perMinute = Bandwidth.classic(AUTH_REQUESTS_PER_MINUTE, Refill.greedy(AUTH_REQUESTS_PER_MINUTE, Duration.ofMinutes(1)));
-        Bandwidth perHour = Bandwidth.classic(AUTH_REQUESTS_PER_HOUR, Refill.greedy(AUTH_REQUESTS_PER_HOUR, Duration.ofHours(1)));
-        return Bucket.builder()
-                .addLimit(perMinute)
-                .addLimit(perHour)
-                .build();
-    }
-
-    private Bucket createLoginBucket() {
-        return Bucket.builder()
-                .addLimit(Bandwidth.classic(LOGIN_REQUESTS_PER_MINUTE, Refill.greedy(LOGIN_REQUESTS_PER_MINUTE, Duration.ofMinutes(1))))
-                .build();
-    }
-
-    private Bucket getBucket(String key, boolean isLogin) {
-        return authBuckets.computeIfAbsent(key, k -> isLogin ? createLoginBucket() : createAuthBucket());
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        String path = request.getRequestURI();
+        return !path.equals("/api/auth/login")
+                && !path.equals("/api/auth/forgot-password")
+                && !path.equals("/api/auth/refresh");
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
+        String clientIp = resolveClientIp(request);
         String path = request.getRequestURI();
 
-        if (!isAuthPath(path)) {
-            chain.doFilter(request, response);
+        Bucket bucket = switch (path) {
+            case "/api/auth/login" -> loginBuckets.computeIfAbsent(clientIp, k -> newBucket(
+                    rateLimitProperties.getLoginPerMinute(), Duration.ofMinutes(1)));
+            case "/api/auth/forgot-password" -> forgotPasswordBuckets.computeIfAbsent(clientIp, k -> newBucket(
+                    rateLimitProperties.getForgotPasswordPerHour(), Duration.ofHours(1)));
+            case "/api/auth/refresh" -> refreshBuckets.computeIfAbsent(clientIp, k -> newBucket(
+                    rateLimitProperties.getRefreshPerMinute(), Duration.ofMinutes(1)));
+            default -> null;
+        };
+
+        if (bucket != null && !bucket.tryConsume(1)) {
+            response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
+            response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+            objectMapper.writeValue(response.getWriter(),
+                    ApiResponse.error("Too many requests. Please try again later.", "RATE_LIMITED", null));
             return;
         }
 
-        String clientKey = resolveClientKey(request);
-        boolean isLogin = path.endsWith("/login") && "POST".equalsIgnoreCase(request.getMethod());
-        Bucket bucket = getBucket(clientKey, isLogin);
-
-        if (bucket.tryConsume(1)) {
-            chain.doFilter(request, response);
-        } else {
-            log.warn("Rate limit exceeded for IP: {} on path: {}", clientKey, path);
-            response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
-            response.setContentType("application/json");
-            response.getWriter().write("{\"success\":false,\"message\":\"Too many requests. Please try again later.\"}");
-        }
+        chain.doFilter(request, response);
     }
 
-    private boolean isAuthPath(String path) {
-        return path.startsWith("/api/auth");
+    private static Bucket newBucket(int capacity, Duration period) {
+        Bandwidth limit = Bandwidth.builder()
+                .capacity(capacity)
+                .refillGreedy(capacity, period)
+                .build();
+        return Bucket.builder().addLimit(limit).build();
     }
 
-    private String resolveClientKey(HttpServletRequest request) {
+    private static String resolveClientIp(HttpServletRequest request) {
         String forwarded = request.getHeader("X-Forwarded-For");
         if (forwarded != null && !forwarded.isBlank()) {
             return forwarded.split(",")[0].trim();
-        }
-        String realIp = request.getHeader("X-Real-IP");
-        if (realIp != null && !realIp.isBlank()) {
-            return realIp.trim();
         }
         return request.getRemoteAddr();
     }

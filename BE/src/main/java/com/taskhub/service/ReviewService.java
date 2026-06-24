@@ -131,9 +131,12 @@ public class ReviewService {
                 .certifications(user.getCertifications())
                 .avatarUrl(user.getAvatarUrl())
                 .role(user.getRole().name())
+                .roleEnum(user.getRole())
                 .walletBalance(user.getWalletBalance())
                 .isVerified(user.getIsVerified())
                 .isAvailable(user.getIsAvailable())
+                .isBanned(user.getIsBanned())
+                .dateOfBirth(user.getDateOfBirth())
                 .averageRatingAsFreelancer(avgFreelancer != null ? Math.round(avgFreelancer * 10.0) / 10.0 : null)
                 .averageRatingAsHirer(avgHirer != null ? Math.round(avgHirer * 10.0) / 10.0 : null)
                 .totalReviewsAsFreelancer(reviewsFreelancer)
@@ -142,6 +145,8 @@ public class ReviewService {
                 .completedTasksAsFreelancer(completedFreelancer)
                 .completedTasksAsHirer(completedHirer)
                 .memberSince(user.getCreatedAt() != null ? user.getCreatedAt().toLocalDate().toString() : null)
+                .emailVerified(user.isEmailVerified())
+                .createdAt(user.getCreatedAt())
                 .build();
     }
 

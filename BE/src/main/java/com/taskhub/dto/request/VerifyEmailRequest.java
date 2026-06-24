@@ -5,6 +5,6 @@ import lombok.*;
 
 @Data @Builder @NoArgsConstructor @AllArgsConstructor
 public class VerifyEmailRequest {
-    @NotBlank(message = "Verification token is required")
+    @NotBlank
     private String token;
 }

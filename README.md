@@ -1,72 +1,139 @@
 # TaskHub Backend — Spring Boot
 
+Production-ready JWT authentication, RBAC, Flyway migrations, and PostgreSQL.
+
 ## Prerequisites
+
 - Java 21
-- PostgreSQL (create DB: `taskhub`)
-- Maven
+- Maven 3.9+
+- Docker (optional, for PostgreSQL + backend)
 
-## Setup
-1. Create PostgreSQL database: `CREATE DATABASE taskhub;`
-2. Update `src/main/resources/application.yml` with your DB credentials and a secure JWT secret (min 256-bit)
-3. Run: `./mvnw spring-boot:run`
+## Quick Start
 
-## API Endpoints
+### Option A — Docker (recommended)
 
-### Auth (`/api/auth`) — Public
-| Method | Endpoint | Body |
+```bash
+cd Taskhub_BE
+docker compose up --build
+```
+
+API: http://localhost:8080  
+Swagger: http://localhost:8080/swagger-ui.html
+
+### Option B — Local dev (H2, no Docker)
+
+```bash
+cd BE
+mvn spring-boot:run
+# default profile: dev (H2 in-memory + Flyway)
+```
+
+H2 Console: http://localhost:8080/h2-console  
+JDBC URL: `jdbc:h2:mem:taskhub`
+
+### Option C — Local PostgreSQL
+
+```bash
+docker compose up postgres -d
+cd BE
+SPRING_PROFILES_ACTIVE=postgres mvn spring-boot:run
+```
+
+## Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `SPRING_PROFILES_ACTIVE` | `dev`, `postgres`, or `prod` | `dev` |
+| `APP_JWT_SECRET` | HMAC secret (≥ 32 bytes, required in prod) | dev default |
+| `APP_JWT_ACCESS_EXPIRATION_MS` | Access token TTL | `900000` (15 min) |
+| `APP_JWT_REFRESH_EXPIRATION_MS` | Refresh token TTL | `604800000` (7 days) |
+| `APP_CORS_ALLOWED_ORIGINS` | Comma-separated allowed origins | `http://localhost:5173,...` |
+| `APP_FRONTEND_BASE_URL` | Base URL for email links | `http://localhost:5173` |
+| `DATABASE_URL` | PostgreSQL JDBC URL | `jdbc:postgresql://localhost:5432/taskhub` |
+| `DATABASE_USERNAME` | DB user | `taskhub` |
+| `DATABASE_PASSWORD` | DB password | `taskhub` |
+
+## Authentication Flow
+
+```
+1. POST /api/auth/register  → accessToken + refreshToken
+2. POST /api/auth/login     → accessToken + refreshToken
+3. API calls                → Authorization: Bearer <accessToken>
+4. POST /api/auth/refresh   → new accessToken + refreshToken (rotation)
+5. POST /api/auth/logout    → revoke refresh token(s) [requires Bearer]
+```
+
+### Refresh Token Rotation
+
+- Refresh tokens are **opaque** (256-bit random), stored as SHA-256 hash in DB
+- On refresh: old token revoked, new pair issued
+- On password change/reset: all refresh tokens revoked
+- Logout with `{ "refreshToken": "..." }` revokes only that device session
+
+### Account Security
+
+| Method | Endpoint | Auth |
 |--------|----------|------|
-| POST | `/register` | `{ email, password, fullName, role: "HIRER"/"STUDENT" }` |
-| POST | `/login` | `{ email, password }` |
+| PATCH | `/api/users/change-password` | Bearer |
+| POST | `/api/auth/forgot-password` | Public |
+| POST | `/api/auth/reset-password` | Public |
+| POST | `/api/auth/verify-email` | Public |
+| GET | `/api/users/me` | Bearer |
+| PATCH | `/api/users/me` | Bearer |
 
-### Tasks (`/api/tasks`) — Authenticated
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/` | Create task (HIRER) |
-| GET | `/{id}` | Get task by ID |
-| GET | `/mine` | Get my tasks |
-| GET | `/available` | Get active tasks (for students) |
-| POST | `/{id}/lock` | Lock task (AI validates criteria) |
-| POST | `/{id}/complete` | Mark completed |
-| POST | `/{id}/revision` | Request revision |
-| POST | `/{id}/dispute` | Dispute task |
+## RBAC Matrix
 
-### Applications (`/api/applications`)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/task/{taskId}` | Apply to task (STUDENT) |
-| POST | `/{id}/accept` | Accept application (HIRER) |
-| GET | `/task/{taskId}` | List task applications |
-| GET | `/mine` | My applications |
+Domain roles: **HIRER** (employer) and **STUDENT** (candidate).  
+Spring Security authorities: `ROLE_HIRER`, `ROLE_STUDENT`.
 
-### Submissions (`/api/submissions`)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/task/{taskId}` | Submit work (STUDENT) |
-| POST | `/task/{taskId}/approve` | Approve submission (HIRER) |
-| GET | `/task/{taskId}` | List submissions |
-| GET | `/task/{taskId}/dispute-report` | AI dispute report |
+| Resource | HIRER | STUDENT |
+|----------|-------|---------|
+| Create/edit/delete tasks | ✅ | ❌ |
+| Lock/publish/complete tasks | ✅ | ❌ |
+| Fund/release escrow | ✅ | ❌ |
+| Accept applications | ✅ | ❌ |
+| Approve submissions | ✅ | ❌ |
+| Open/resolve disputes | ✅ | ❌ |
+| Browse available tasks | ✅ | ✅ |
+| Apply to tasks | ❌ | ✅ |
+| Submit work / precheck | ❌ | ✅ |
+| Wallet (own) | ✅ | ✅ |
+| Profile (`/api/users/me`) | ✅ | ✅ |
 
-### Escrow (`/api/escrow`)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/fund/{taskId}` | Fund escrow (HIRER) |
-| POST | `/release/{taskId}` | Release to student |
+Enforced via `@PreAuthorize("hasRole('HIRER')")` / `hasRole('STUDENT')` on controllers.
 
-### Wallet (`/api/wallet`)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/balance` | Get wallet balance |
-| POST | `/deposit?amount=X` | Deposit funds |
+## Security Architecture
+
+- **JWT access tokens** (15 min) — HMAC-SHA256, claim `type=access`
+- **Opaque refresh tokens** (7 days) — DB-backed, revocable, rotated
+- **BCrypt** password hashing (strength 10)
+- **Rate limiting** (Bucket4j): login, refresh, forgot-password
+- **CORS**: configurable origins, credentials enabled
+- **Secure headers**: HSTS, X-Content-Type-Options, Referrer-Policy
+- **CSRF disabled** — stateless JWT API (see `SecurityConfig` javadoc)
+- **Audit logging**: structured `AUDIT` logger + `security_events` table
+
+## Flyway
+
+Migrations: `src/main/resources/db/migration/`
+
+Schema managed by Flyway; Hibernate `ddl-auto=validate`.
+
+## Testing
+
+```bash
+cd BE
+mvn test
+```
+
+Security tests: `JwtServiceTest`, `AuthServiceTest`, `AuthIntegrationTest`
+
+## CI/CD
+
+GitHub Actions: `.github/workflows/backend-ci.yml`
 
 ## State Machine
+
 ```
 DRAFT → LOCKED → ESCROW_FUNDED → ACTIVE → IN_PROGRESS → SUBMITTED → COMPLETED/DISPUTED
 ```
-No state can be skipped. All transitions are validated in the service layer.
-
-## AI Validation
-- **Lock task**: Validates acceptance criteria for vague terms
-- **Submission**: Scores against criteria (0% blocks, <70% warns)
-- **Dispute**: Generates structured report
-
-> **Note**: AI scoring uses keyword matching as placeholder. Replace `AiValidationService` methods with real LLM calls for production.

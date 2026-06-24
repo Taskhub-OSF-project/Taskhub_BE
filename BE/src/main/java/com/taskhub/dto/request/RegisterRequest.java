@@ -9,7 +9,7 @@ import java.time.LocalDate;
 public class RegisterRequest {
     @NotBlank @Email
     private String email;
-    @NotBlank @Size(min = 6)
+    @NotBlank @Size(min = 8, max = 128)
     private String password;
     @NotBlank
     private String fullName;

@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: taskhub-postgres
+    environment:
+      POSTGRES_DB: taskhub
+      POSTGRES_USER: taskhub
+      POSTGRES_PASSWORD: taskhub
+    ports:
+      - "5432:5432"
+    volumes:
+      - taskhub_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taskhub -d taskhub"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./BE
+      dockerfile: Dockerfile
+    container_name: taskhub-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: postgres,prod
+      DATABASE_URL: jdbc:postgresql://postgres:5432/taskhub
+      DATABASE_USERNAME: taskhub
+      DATABASE_PASSWORD: taskhub
+      APP_JWT_SECRET: ${APP_JWT_SECRET:-change-me-in-production-min-32-characters!!}
+      APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS:-http://localhost:5173}
+      APP_FRONTEND_BASE_URL: ${APP_FRONTEND_BASE_URL:-http://localhost:5173}
+    ports:
+      - "8080:8080"
+
+volumes:
+  taskhub_pg_data:

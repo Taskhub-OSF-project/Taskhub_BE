@@ -6,12 +6,9 @@ import lombok.*;
 public class SecurityEventResponse {
     private Long id;
     private Long userId;
-    private String userEmailHash;
+    private String email;
     private String eventType;
-    private String outcome;
     private String ipAddress;
-    private String userAgent;
-    private String reason;
-    private String metadata;
+    private String detail;
     private String createdAt;
 }

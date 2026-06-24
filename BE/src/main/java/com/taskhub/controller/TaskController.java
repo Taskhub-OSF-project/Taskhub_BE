@@ -79,6 +79,7 @@ public class TaskController {
     }
 
     @PostMapping("/{id}/validate")
+    @PreAuthorize("hasRole('HIRER')")
     public ResponseEntity<ApiResponse<AiValidationService.ValidationResult>> validateCriteria(@PathVariable Long id) {
         var task = taskService.findOwnedTask(id);
         List<String> criteria = task.getAcceptanceCriteria().stream()
@@ -88,6 +89,7 @@ public class TaskController {
     }
 
     @PostMapping(value = "/criteria/extract", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasRole('HIRER')")
     public ResponseEntity<ApiResponse<CriteriaExtractResponse>> extractCriteria(
             @RequestPart("file") MultipartFile file) {
         return ResponseEntity.ok(ApiResponse.ok("Criteria extracted",
@@ -95,6 +97,7 @@ public class TaskController {
     }
 
     @PostMapping("/{id}/lock")
+    @PreAuthorize("hasRole('HIRER')")
     public ResponseEntity<ApiResponse<ValidationPhaseResponse>> lockWithValidation(@PathVariable Long id) {
         var task = taskService.findOwnedTask(id);
         List<String> criteria = task.getAcceptanceCriteria().stream()
@@ -125,23 +128,27 @@ public class TaskController {
     }
 
     @PostMapping("/{id}/complete")
+    @PreAuthorize("hasRole('HIRER')")
     public ResponseEntity<ApiResponse<TaskResponse>> complete(@PathVariable Long id) {
         escrowService.releaseEscrow(id);
         return ResponseEntity.ok(ApiResponse.ok("Task completed", taskService.getTask(id)));
     }
 
     @PostMapping("/{id}/publish")
+    @PreAuthorize("hasRole('HIRER')")
     public ResponseEntity<ApiResponse<TaskResponse>> publish(@PathVariable Long id) {
         return ResponseEntity.ok(ApiResponse.ok("Task published", taskService.publishTask(id)));
     }
 
     @PostMapping("/{id}/revision")
+    @PreAuthorize("hasRole('HIRER')")
     public ResponseEntity<ApiResponse<RevisionRequestResponse>> revision(
             @PathVariable Long id, @Valid @RequestBody RevisionRequest req) {
         return ResponseEntity.ok(ApiResponse.ok("Revision requested", submissionService.requestRevision(id, req)));
     }
 
     @PostMapping("/{id}/dispute")
+    @PreAuthorize("hasRole('HIRER')")
     public ResponseEntity<ApiResponse<DisputeAIReport>> dispute(
             @PathVariable Long id,
             @Valid @RequestBody DisputeRequest req) {
@@ -154,6 +161,7 @@ public class TaskController {
     }
 
     @PostMapping("/{id}/dispute/resolve")
+    @PreAuthorize("hasRole('HIRER')")
     public ResponseEntity<ApiResponse<DisputeResolveResponse>> resolveDispute(
             @PathVariable Long id,
             @Valid @RequestBody DisputeResolveRequest req) {
@@ -161,12 +169,14 @@ public class TaskController {
     }
 
     @PatchMapping("/{id}")
+    @PreAuthorize("hasRole('HIRER')")
     public ResponseEntity<ApiResponse<TaskResponse>> patch(
             @PathVariable Long id, @Valid @RequestBody PatchTaskRequest req) {
         return ResponseEntity.ok(ApiResponse.ok("Task updated", taskService.updateTask(id, req)));
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('HIRER')")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable Long id) {
         taskService.deleteTask(id);
         return ResponseEntity.ok(ApiResponse.ok("Task deleted", null));

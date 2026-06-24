@@ -4,43 +4,34 @@ import jakarta.persistence.*;
 import lombok.*;
 import java.time.LocalDateTime;
 
+/**
+ * Refresh token đã phát hành, lưu dưới dạng hash SHA-256 (không bao giờ lưu raw).
+ * Thuộc module Security — phục vụ rotation và logout/revocation.
+ */
 @Entity
-@Table(name = "refresh_tokens")
+@Table(name = "refresh_tokens", indexes = {
+        @Index(name = "idx_refresh_token_hash", columnList = "tokenHash"),
+        @Index(name = "idx_refresh_token_user", columnList = "userId")
+})
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class RefreshToken {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "token_hash", nullable = false, unique = true, length = 64)
+    @Column(nullable = false)
+    private Long userId;
+
+    @Column(nullable = false, unique = true, length = 64)
     private String tokenHash;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
-    private User user;
-
-    @Column(name = "expires_at", nullable = false)
+    @Column(nullable = false)
     private LocalDateTime expiresAt;
 
     @Column(nullable = false)
     @Builder.Default
-    private Boolean revoked = false;
+    private boolean revoked = false;
 
-    @Column(name = "created_at", nullable = false, updatable = false)
     @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
-
-    @Column(name = "revoked_at")
-    private LocalDateTime revokedAt;
-
-    @Column(name = "replaced_by_hash", length = 64)
-    private String replacedByHash;
-
-    public boolean isExpired() {
-        return LocalDateTime.now().isAfter(expiresAt);
-    }
-
-    public boolean isValid() {
-        return !Boolean.TRUE.equals(revoked) && !isExpired();
-    }
 }

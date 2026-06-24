@@ -7,6 +7,7 @@ import com.taskhub.service.SubmissionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
@@ -17,16 +18,19 @@ public class SubmissionController {
     private final SubmissionService submissionService;
 
     @PostMapping("/task/{taskId}")
+    @PreAuthorize("hasRole('STUDENT')")
     public ResponseEntity<ApiResponse<SubmissionResponse>> submit(@PathVariable Long taskId, @Valid @RequestBody SubmissionRequest req) {
         return ResponseEntity.ok(ApiResponse.ok("Submitted", submissionService.submit(taskId, req)));
     }
 
     @PostMapping("/task/{taskId}/precheck")
+    @PreAuthorize("hasRole('STUDENT')")
     public ResponseEntity<ApiResponse<SubmissionAIResult>> precheck(@PathVariable Long taskId, @Valid @RequestBody SubmissionRequest req) {
         return ResponseEntity.ok(ApiResponse.ok("Precheck evaluated", submissionService.precheck(taskId, req)));
     }
 
     @PostMapping("/task/{taskId}/revision")
+    @PreAuthorize("hasRole('HIRER')")
     public ResponseEntity<ApiResponse<RevisionRequestResponse>> requestRevision(
             @PathVariable Long taskId, @Valid @RequestBody RevisionRequest req) {
         return ResponseEntity.ok(ApiResponse.ok("Revision requested", submissionService.requestRevision(taskId, req)));
@@ -38,6 +42,7 @@ public class SubmissionController {
     }
 
     @PostMapping("/task/{taskId}/approve")
+    @PreAuthorize("hasRole('HIRER')")
     public ResponseEntity<ApiResponse<Void>> approve(@PathVariable Long taskId) {
         submissionService.approveSubmission(taskId);
         return ResponseEntity.ok(ApiResponse.ok("Submission approved", null));

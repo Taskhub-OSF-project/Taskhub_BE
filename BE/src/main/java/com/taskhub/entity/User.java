@@ -4,14 +4,14 @@ import com.taskhub.enums.Role;
 import jakarta.persistence.*;
 import lombok.*;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
 @Entity
 @Table(name = "users")
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
-public class User {
+public class User extends AuditableEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -81,7 +81,7 @@ public class User {
     @Column(length = 500)
     private String avatarUrl;
 
-    private java.time.LocalDate dateOfBirth;
+    private LocalDate dateOfBirth;
 
     @Column(name = "is_verified", nullable = false, columnDefinition = "boolean default false")
     @Builder.Default
@@ -95,7 +95,7 @@ public class User {
     @Builder.Default
     private Boolean isBanned = false;
 
-    @Column(nullable = false, updatable = false)
+    @Column(nullable = false)
     @Builder.Default
-    private LocalDateTime createdAt = LocalDateTime.now();
+    private boolean emailVerified = false;
 }
