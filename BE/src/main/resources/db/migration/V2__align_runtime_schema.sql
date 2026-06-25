@@ -65,3 +65,15 @@ ALTER TABLE tasks
     ALTER COLUMN revision_count SET NOT NULL,
     ALTER COLUMN applicant_count SET DEFAULT 0,
     ALTER COLUMN applicant_count SET NOT NULL;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'security_events'
+          AND column_name = 'outcome'
+    ) THEN
+        ALTER TABLE security_events ALTER COLUMN outcome DROP NOT NULL;
+    END IF;
+END $$;
