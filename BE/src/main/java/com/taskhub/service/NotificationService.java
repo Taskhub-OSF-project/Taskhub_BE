@@ -82,6 +82,13 @@ public class NotificationService {
         return notificationRepository.countByUserIdAndIsReadFalse(userId);
     }
 
+    public List<NotificationResponse> unreadForUser(Long userId) {
+        return notificationRepository.findTop20ByUserIdAndIsReadFalseOrderByCreatedAtDesc(userId)
+                .stream()
+                .map(NotificationResponse::from)
+                .toList();
+    }
+
     @Transactional
     public void notifyRevisionRequested(Long studentId, String taskTitle, Long taskId) {
         notifyRevisionRequested(studentId, taskTitle, taskId, null, null);

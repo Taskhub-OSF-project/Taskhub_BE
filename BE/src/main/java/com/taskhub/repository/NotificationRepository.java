@@ -12,6 +12,8 @@ import java.time.LocalDateTime;
 public interface NotificationRepository extends JpaRepository<Notification, Long> {
     Page<Notification> findByUserIdOrderByCreatedAtDesc(Long userId, Pageable pageable);
 
+    java.util.List<Notification> findTop20ByUserIdAndIsReadFalseOrderByCreatedAtDesc(Long userId);
+
     long countByUserIdAndIsReadFalse(Long userId);
 
     @Modifying

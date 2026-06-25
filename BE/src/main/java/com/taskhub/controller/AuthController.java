@@ -43,6 +43,24 @@ public class AuthController {
                 "If the email exists, a reset link will be sent", null));
     }
 
+    @PostMapping("/recover-account")
+    public ResponseEntity<ApiResponse<Object>> recoverAccount(@Valid @RequestBody RecoverAccountRequest req) {
+        return ResponseEntity.ok(ApiResponse.ok("Account recovery checked",
+                authService.recoverAccount(req)));
+    }
+
+    @PostMapping("/recover-password/request")
+    public ResponseEntity<ApiResponse<Object>> requestPasswordReset(@Valid @RequestBody PasswordResetRequest req) {
+        return ResponseEntity.ok(ApiResponse.ok("Password reset requested",
+                authService.requestPasswordReset(req)));
+    }
+
+    @PostMapping("/recover-password/confirm")
+    public ResponseEntity<ApiResponse<Object>> confirmPasswordReset(@Valid @RequestBody PasswordResetConfirmRequest req) {
+        return ResponseEntity.ok(ApiResponse.ok("Password reset confirmed",
+                authService.confirmPasswordReset(req)));
+    }
+
     @PostMapping("/reset-password")
     public ResponseEntity<ApiResponse<Void>> resetPassword(@Valid @RequestBody ResetPasswordRequest req) {
         authService.resetPassword(req);

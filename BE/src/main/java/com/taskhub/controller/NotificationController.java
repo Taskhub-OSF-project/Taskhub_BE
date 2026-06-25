@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -33,10 +34,26 @@ public class NotificationController {
         return ResponseEntity.ok(ApiResponse.ok("Unread count", Map.of("count", count)));
     }
 
+    @GetMapping("/unread/count")
+    public ResponseEntity<ApiResponse<Map<String, Long>>> unreadCountAlias() {
+        return unreadCount();
+    }
+
+    @GetMapping("/unread")
+    public ResponseEntity<ApiResponse<List<NotificationResponse>>> unread() {
+        return ResponseEntity.ok(ApiResponse.ok("Unread notifications retrieved",
+                notificationService.unreadForUser(AuthUtil.getCurrentUser().getId())));
+    }
+
     @PatchMapping("/{id}/read")
     public ResponseEntity<ApiResponse<Void>> markRead(@PathVariable Long id) {
         notificationService.markRead(id, AuthUtil.getCurrentUser().getId());
         return ResponseEntity.ok(ApiResponse.ok("Notification marked as read", null));
+    }
+
+    @PostMapping("/{id}/read")
+    public ResponseEntity<ApiResponse<Void>> markReadPost(@PathVariable Long id) {
+        return markRead(id);
     }
 
     @PostMapping("/read-all")

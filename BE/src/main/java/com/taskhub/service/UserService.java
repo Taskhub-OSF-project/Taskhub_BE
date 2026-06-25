@@ -61,9 +61,53 @@ public class UserService {
         if (req.getMajor() != null) {
             user.setMajor(trimToNull(req.getMajor()));
         }
+        if (req.getBio() != null) {
+            user.setBio(trimToNull(req.getBio()));
+        }
+        if (req.getSkills() != null) {
+            user.setSkills(cleanList(req.getSkills()));
+        }
+        if (req.getExperience() != null) {
+            user.setExperience(trimToNull(req.getExperience()));
+        }
+        if (req.getPortfolioUrl() != null) {
+            user.setPortfolioUrl(trimToNull(req.getPortfolioUrl()));
+        }
+        if (req.getPhone() != null) {
+            user.setPhone(trimToNull(req.getPhone()));
+        }
+        if (req.getTitle() != null) {
+            user.setTitle(trimToNull(req.getTitle()));
+        }
+        if (req.getHourlyRate() != null) {
+            user.setHourlyRate(trimToNull(req.getHourlyRate()));
+        }
+        if (req.getAvailability() != null) {
+            user.setAvailability(trimToNull(req.getAvailability()));
+        }
+        if (req.getLanguages() != null) {
+            user.setLanguages(cleanList(req.getLanguages()));
+        }
+        if (req.getCertifications() != null) {
+            user.setCertifications(cleanList(req.getCertifications()));
+        }
+        if (req.getAvatarUrl() != null) {
+            user.setAvatarUrl(trimToNull(req.getAvatarUrl()));
+        }
 
         userRepository.save(user);
         auditService.record("PROFILE_UPDATE", user.getEmail(), "Profile updated");
+        return buildProfile(userId);
+    }
+
+    @Transactional
+    public UserProfileResponse setAvailability(Long userId, boolean available) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> TaskHubException.notFound("User not found"));
+        user.setIsAvailable(available);
+        user.setAvailability(available ? "Sẵn sàng" : "Không sẵn sàng");
+        userRepository.save(user);
+        auditService.record("PROFILE_UPDATE", user.getEmail(), "Availability updated");
         return buildProfile(userId);
     }
 
@@ -205,5 +249,13 @@ public class UserService {
         if (value == null) return null;
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private List<String> cleanList(List<String> values) {
+        if (values == null) return null;
+        return values.stream()
+                .map(this::trimToNull)
+                .filter(v -> v != null)
+                .toList();
     }
 }

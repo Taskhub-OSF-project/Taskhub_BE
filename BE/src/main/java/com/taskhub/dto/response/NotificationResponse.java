@@ -12,8 +12,11 @@ public class NotificationResponse {
     private NotificationType type;
     private String title;
     private String body;
+    private String message;
     private String link;
+    private String actionUrl;
     private Long relatedId;
+    private Long taskId;
     private Boolean isRead;
     private LocalDateTime readAt;
     private LocalDateTime createdAt;
@@ -24,8 +27,11 @@ public class NotificationResponse {
                 .type(n.getType())
                 .title(n.getTitle())
                 .body(n.getBody())
+                .message(n.getBody())
                 .link(n.getLink())
+                .actionUrl(n.getLink())
                 .relatedId(n.getRelatedId())
+                .taskId(n.getRelatedId())
                 .isRead(n.getIsRead())
                 .readAt(n.getReadAt())
                 .createdAt(n.getCreatedAt())

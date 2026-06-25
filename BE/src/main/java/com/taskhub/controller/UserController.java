@@ -23,11 +23,30 @@ public class UserController {
         return ResponseEntity.ok(ApiResponse.ok(userService.getProfile(userId)));
     }
 
+    @GetMapping("/{id}")
+    public ResponseEntity<ApiResponse<UserProfileResponse>> getUserProfile(@PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.ok(userService.getProfile(id)));
+    }
+
     @PatchMapping("/me")
     public ResponseEntity<ApiResponse<UserProfileResponse>> updateProfile(
             @Valid @RequestBody UpdateProfileRequest req) {
         Long userId = AuthUtil.getCurrentUser().getId();
         return ResponseEntity.ok(ApiResponse.ok("Profile updated", userService.updateProfile(userId, req)));
+    }
+
+    @PutMapping("/me")
+    public ResponseEntity<ApiResponse<UserProfileResponse>> replaceProfile(
+            @Valid @RequestBody UpdateProfileRequest req) {
+        Long userId = AuthUtil.getCurrentUser().getId();
+        return ResponseEntity.ok(ApiResponse.ok("Profile updated", userService.updateProfile(userId, req)));
+    }
+
+    @PostMapping("/me/availability")
+    public ResponseEntity<ApiResponse<UserProfileResponse>> setAvailability(
+            @RequestParam(defaultValue = "true") boolean available) {
+        Long userId = AuthUtil.getCurrentUser().getId();
+        return ResponseEntity.ok(ApiResponse.ok("Availability updated", userService.setAvailability(userId, available)));
     }
 
     @PatchMapping("/change-password")

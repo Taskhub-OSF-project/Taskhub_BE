@@ -12,8 +12,10 @@ public class PageRequestDto {
     private String sortDir = "desc";
 
     public PageRequest toSpringPageRequest() {
-        Sort.Direction direction = "asc".equalsIgnoreCase(sortDir)
+        String resolvedSortBy = sortBy == null || sortBy.isBlank() ? "id" : sortBy.trim();
+        String resolvedSortDir = sortDir == null || sortDir.isBlank() ? "desc" : sortDir.trim();
+        Sort.Direction direction = "asc".equalsIgnoreCase(resolvedSortDir)
                 ? Sort.Direction.ASC : Sort.Direction.DESC;
-        return PageRequest.of(page, Math.min(size, 100), Sort.by(direction, sortBy));
+        return PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100), Sort.by(direction, resolvedSortBy));
     }
 }
