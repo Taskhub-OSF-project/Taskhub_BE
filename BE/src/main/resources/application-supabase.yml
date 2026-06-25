@@ -1,6 +1,9 @@
 # Supabase Postgres. Set SPRING_PROFILES_ACTIVE=supabase when running against Supabase.
 spring:
   datasource:
+    config:
+      activate:
+        on-profile: supabase # <--- BẮT BUỘC PHẢI THÊM 3 DÒNG NÀY Ở ĐẦU FILE
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require&prepareThreshold=0}
     username: ${SPRING_DATASOURCE_USERNAME:postgres.wwduzspwejdyvbnjxkkz}
     password: ${SPRING_DATASOURCE_PASSWORD}
