@@ -225,12 +225,11 @@ CREATE TABLE notifications (
     user_id     BIGINT       NOT NULL,
     type        VARCHAR(50)  NOT NULL,
     title       VARCHAR(255) NOT NULL,
-    message     TEXT         NOT NULL,
+    body        TEXT         NOT NULL,
     is_read     BOOLEAN      NOT NULL DEFAULT FALSE,
     read_at     TIMESTAMP,
-    action_url  VARCHAR(500),
-    task_id     BIGINT,
-    metadata    TEXT,
+    link        VARCHAR(300),
+    related_id  BIGINT,
     created_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_notif_user FOREIGN KEY (user_id) REFERENCES users(id)
 );
