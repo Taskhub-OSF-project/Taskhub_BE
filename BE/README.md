@@ -2,13 +2,20 @@
 
 ## Prerequisites
 - Java 21
-- PostgreSQL (create DB: `taskhub`)
+- PostgreSQL/Supabase
 - Maven
 
-## Setup
-1. Create PostgreSQL database: `CREATE DATABASE taskhub;`
-2. Update `src/main/resources/application.yml` with your DB credentials and a secure JWT secret (min 256-bit)
-3. Run: `./mvnw spring-boot:run`
+## Setup local with Supabase
+1. Copy `.env.example` to `.env` and set `SPRING_DATASOURCE_PASSWORD`.
+2. Keep `SPRING_PROFILES_ACTIVE=supabase` for the default Supabase-backed run.
+3. Run `TaskHubApplication` or `mvn spring-boot:run`.
+4. API: http://localhost:8080, Swagger: http://localhost:8080/swagger-ui.html
+
+Detailed DB setup: [docs/DATABASE_SETUP.md](../docs/DATABASE_SETUP.md)
+Full API reference: [docs/API_REFERENCE.md](../docs/API_REFERENCE.md)
+
+## SQL Server
+Set `SPRING_PROFILES_ACTIVE=sqlserver` and `SPRING_DATASOURCE_PASSWORD=<your-sa-password>`.
 
 ## API Endpoints
 

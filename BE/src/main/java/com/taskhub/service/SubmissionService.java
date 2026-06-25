@@ -43,6 +43,7 @@ public class SubmissionService {
     private final AiValidationService aiValidation;
     private final TaskService taskService;
     private final EscrowService escrowService;
+    private final NotificationService notificationService;
     private final ObjectMapper objectMapper;
 
     @Transactional
@@ -185,6 +186,12 @@ public class SubmissionService {
         clearLatestPrecheck(task);
         taskService.transition(task, TaskStatus.IN_PROGRESS);
         taskRepo.save(task);
+        notificationService.notifyRevisionRequested(
+                task.getAssignedTo().getId(),
+                task.getTitle(),
+                task.getId(),
+                savedRevision.getReason(),
+                savedRevision.getDescription());
 
         return toRevisionResponse(savedRevision);
     }

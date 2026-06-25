@@ -25,38 +25,61 @@ public class MessagingService {
     private final ConversationRepository conversationRepo;
     private final MessageRepository messageRepo;
     private final TaskRepository taskRepository;
+    private final TaskApplicationRepository taskApplicationRepository;
     private final WebSocketPushService pushService;
 
     @Transactional
     public ConversationResponse getOrCreateConversation(Long taskId) {
+        return getOrCreateConversation(taskId, null);
+    }
+
+    @Transactional
+    public ConversationResponse getOrCreateConversation(Long taskId, Long otherUserId) {
         User currentUser = AuthUtil.getCurrentUser();
         Task task = taskRepository.findById(taskId)
-                .orElseThrow(() -> TaskHubException.notFound("Task not found"));
+                .orElseThrow(() -> TaskHubException.notFound("Không tìm thấy công việc"));
 
         boolean isHirer = task.getHirer().getId().equals(currentUser.getId());
         boolean isAssignedStudent = task.getAssignedTo() != null
                 && task.getAssignedTo().getId().equals(currentUser.getId());
+        boolean isApplicant = taskApplicationRepository.existsByTaskIdAndStudentId(taskId, currentUser.getId());
 
-        if (!isHirer && !isAssignedStudent) {
-            throw TaskHubException.forbidden("Only task participants can message");
+        User hirer = task.getHirer();
+        User student;
+        if (isHirer) {
+            student = resolveStudentForHirer(task, otherUserId);
+        } else if (isAssignedStudent || isApplicant) {
+            student = currentUser;
+        } else {
+            throw TaskHubException.forbidden("Bạn cần ứng tuyển hoặc được giao công việc này trước khi nhắn tin với người thuê");
+        }
+        if (student == null) {
+            throw TaskHubException.badRequest("Chưa chọn sinh viên để mở hội thoại");
         }
 
-        User otherUser = isHirer ? task.getAssignedTo() : task.getHirer();
-        if (otherUser == null) {
-            throw TaskHubException.badRequest("Task has no assigned student yet");
-        }
-
-        Conversation conv = conversationRepo.findByTaskAndParticipants(taskId, task.getHirer().getId(), otherUser.getId())
+        Conversation conv = conversationRepo.findByTaskAndParticipants(taskId, hirer.getId(), student.getId())
                 .orElseGet(() -> {
                     Conversation newConv = Conversation.builder()
                             .task(task)
-                            .participantA(task.getHirer())
-                            .participantB(otherUser)
+                            .participantA(hirer)
+                            .participantB(student)
                             .build();
                     return conversationRepo.save(newConv);
                 });
 
         return toConversationResponse(conv, currentUser.getId());
+    }
+
+    private User resolveStudentForHirer(Task task, Long otherUserId) {
+        if (otherUserId == null) {
+            return task.getAssignedTo();
+        }
+        if (task.getAssignedTo() != null && task.getAssignedTo().getId().equals(otherUserId)) {
+            return task.getAssignedTo();
+        }
+        return taskApplicationRepository.findByTaskIdAndStudentId(task.getId(), otherUserId)
+                .map(TaskApplication::getStudent)
+                .orElseThrow(() -> TaskHubException.forbidden("Sinh viên này chưa ứng tuyển công việc"));
     }
 
     @Transactional(readOnly = true)
@@ -69,6 +92,7 @@ public class MessagingService {
                         Sort.by(Sort.Direction.DESC, "lastMessageAt")));
         return PageResponse.<ConversationResponse>builder()
                 .content(page.getContent().stream()
+                        .filter(this::hasTwoParticipants)
                         .map(c -> toConversationResponse(c, user.getId())).toList())
                 .page(page.getNumber()).size(page.getSize())
                 .totalElements(page.getTotalElements()).totalPages(page.getTotalPages())
@@ -81,6 +105,7 @@ public class MessagingService {
     public List<ConversationResponse> getMyConversationsList() {
         User user = AuthUtil.getCurrentUser();
         return conversationRepo.findByParticipantIdOrderByLastMessage(user.getId()).stream()
+                .filter(this::hasTwoParticipants)
                 .map(c -> toConversationResponse(c, user.getId())).toList();
     }
 
@@ -147,7 +172,7 @@ public class MessagingService {
     @Transactional(readOnly = true)
     public long getTotalUnreadCount() {
         User user = AuthUtil.getCurrentUser();
-        return conversationRepo.countUnreadForUser(user.getId());
+        return messageRepo.countUnreadForUser(user.getId());
     }
 
     private ConversationResponse toConversationResponse(Conversation c, Long currentUserId) {
@@ -171,6 +196,12 @@ public class MessagingService {
                 .unreadCount(c.getUnreadCountFor(currentUserId))
                 .createdAt(c.getCreatedAt())
                 .build();
+    }
+
+    private boolean hasTwoParticipants(Conversation c) {
+        return c.getParticipantA() != null
+                && c.getParticipantB() != null
+                && !c.getParticipantA().getId().equals(c.getParticipantB().getId());
     }
 
     private MessageResponse toMessageResponse(Message m) {

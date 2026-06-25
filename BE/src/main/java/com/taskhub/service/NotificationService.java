@@ -83,6 +83,26 @@ public class NotificationService {
     }
 
     @Transactional
+    public void notifyRevisionRequested(Long studentId, String taskTitle, Long taskId) {
+        notifyRevisionRequested(studentId, taskTitle, taskId, null, null);
+    }
+
+    @Transactional
+    public void notifyRevisionRequested(Long studentId, String taskTitle, Long taskId, String reason, String description) {
+        StringBuilder message = new StringBuilder("Revision requested for: ").append(taskTitle);
+        if (reason != null && !reason.isBlank()) {
+            message.append(". Reason: ").append(reason.trim());
+        }
+        if (description != null && !description.isBlank()) {
+            message.append(". Note: ").append(description.trim());
+        }
+        notify(studentId, NotificationType.TASK_REVISION_REQUESTED,
+                "Revision requested",
+                message.toString(),
+                "/student/tasks/" + taskId, taskId);
+    }
+
+    @Transactional
     public void markRead(Long notificationId, Long userId) {
         int updated = notificationRepository.markRead(notificationId, userId, LocalDateTime.now());
         if (updated == 0) {

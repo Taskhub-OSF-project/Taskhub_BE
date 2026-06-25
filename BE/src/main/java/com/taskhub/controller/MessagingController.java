@@ -38,6 +38,13 @@ public class MessagingController {
         return ResponseEntity.ok(ApiResponse.ok(messagingService.getOrCreateConversation(taskId)));
     }
 
+    @PostMapping("/conversations/task/{taskId}/user/{userId}")
+    public ResponseEntity<ApiResponse<ConversationResponse>> getOrCreateConversationWithUser(
+            @PathVariable Long taskId,
+            @PathVariable Long userId) {
+        return ResponseEntity.ok(ApiResponse.ok(messagingService.getOrCreateConversation(taskId, userId)));
+    }
+
     @PostMapping("/conversations/{conversationId}/messages")
     public ResponseEntity<ApiResponse<MessageResponse>> sendMessage(
             @PathVariable Long conversationId,

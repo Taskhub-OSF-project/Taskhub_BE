@@ -20,6 +20,12 @@ public class RegisterRequest {
     @Size(max = 100)
     private String major;
 
+    @Size(max = 20)
+    private String phoneNumber;
+
+    @Min(10) @Max(120)
+    private Integer age;
+
     @NotNull
     private Role role;
 

@@ -64,13 +64,20 @@ public class ReviewService {
                 .build();
         review = reviewRepository.save(review);
 
-        String title = isHirer ? "Ban da nhan duoc danh gia moi" : "Danh gia tu nguoi thue";
-        String message = currentUser.getFullName() + " da danh gia ban " + req.getRating() + "/5 sao cho cong viec: " + task.getTitle();
+        String title = isHirer ? "Đánh giá mới từ sinh viên" : "Đánh giá từ người thuê";
+        StringBuilder message = new StringBuilder(currentUser.getFullName())
+                .append(" đã đánh giá bạn ")
+                .append(req.getRating())
+                .append("/5 sao cho công việc: ")
+                .append(task.getTitle());
+        if (req.getComment() != null && !req.getComment().isBlank()) {
+            message.append(". Nhận xét: ").append(req.getComment().trim());
+        }
         notificationService.notify(
                 reviewee.getId(),
                 NotificationType.REVIEW_RECEIVED,
                 title,
-                message,
+                message.toString(),
                 "/profile/" + currentUser.getId(),
                 taskId
         );

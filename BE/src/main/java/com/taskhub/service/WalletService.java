@@ -98,7 +98,7 @@ public class WalletService {
     }
 
     /**
-     * Nạp tiền mock vào ví (dev/demo).
+     * Nạp tiền vào ví người dùng hiện tại.
      */
     @Transactional
     public WalletResponse deposit(BigDecimal amount) {
@@ -112,7 +112,7 @@ public class WalletService {
     }
 
     /**
-     * Rút tiền từ ví (dev/demo).
+     * Rút tiền từ ví người dùng hiện tại.
      */
     @Transactional
     public WalletResponse withdraw(BigDecimal amount) {

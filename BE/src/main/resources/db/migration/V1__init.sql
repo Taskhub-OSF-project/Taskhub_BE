@@ -1,6 +1,6 @@
 -- ============================================================
 -- TaskHub Platform — Initial Schema
--- V1__init.sql  |  Compatible: H2 (dev), PostgreSQL (Supabase), SQL Server
+-- V1__init.sql  |  Optional Flyway baseline for managed database profiles
 -- Run with: Flyway migrate
 -- ============================================================
 

@@ -157,17 +157,28 @@ class TaskServiceTest extends BaseIntegrationTest {
 
     // ── publishTask ─────────────────────────────────────────
     // State machine: DRAFT -> canTransitionTo LOCKED only.
-    // publishTask transitions to LOCKED (not ACTIVE — ACTIVE requires ESCROW_FUNDED).
+    // publishTask opens a task for applications after escrow is funded.
 
     @Test
-    void publishTask_FromDraft_SetsToLocked() {
+    void publishTask_FromEscrowFunded_SetsToActive() {
+        User hirer = createUser(Role.HIRER);
+        setAuth(hirer);
+        Task task = createDraftTask(hirer);
+        taskService.transitionTask(task.getId(), TaskStatus.LOCKED);
+        taskService.transitionTask(task.getId(), TaskStatus.ESCROW_FUNDED);
+
+        TaskResponse resp = taskService.publishTask(task.getId());
+
+        assertEquals(TaskStatus.ACTIVE, resp.getStatus());
+    }
+
+    @Test
+    void publishTask_FromDraft_Fails() {
         User hirer = createUser(Role.HIRER);
         setAuth(hirer);
         Task task = createDraftTask(hirer);
 
-        TaskResponse resp = taskService.publishTask(task.getId());
-
-        assertEquals(TaskStatus.LOCKED, resp.getStatus());
+        assertThrows(TaskHubException.class, () -> taskService.publishTask(task.getId()));
     }
 
     @Test

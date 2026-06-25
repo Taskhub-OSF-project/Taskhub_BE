@@ -25,6 +25,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Service
@@ -46,6 +47,11 @@ public class AuthService {
         if (userRepository.existsByEmail(req.getEmail()))
             throw TaskHubException.badRequest("Email already registered");
 
+        LocalDate dateOfBirth = req.getDateOfBirth();
+        if (dateOfBirth == null && req.getAge() != null) {
+            dateOfBirth = LocalDate.now().minusYears(req.getAge());
+        }
+
         User user = User.builder()
                 .email(req.getEmail())
                 .password(passwordEncoder.encode(req.getPassword()))
@@ -53,8 +59,8 @@ public class AuthService {
                 .university(trimToNull(req.getUniversity()))
                 .major(trimToNull(req.getMajor()))
                 .role(req.getRole())
-                .dateOfBirth(req.getDateOfBirth())
-                .phone(trimToNull(req.getPhone()))
+                .dateOfBirth(dateOfBirth)
+                .phone(trimToNull(req.getPhoneNumber() != null ? req.getPhoneNumber() : req.getPhone()))
                 .isVerified(false)
                 .build();
         user = userRepository.save(user);

@@ -17,6 +17,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
     boolean existsByPhone(String phone);
 
     Page<User> findByRole(Role role, Pageable pageable);
+    java.util.List<User> findByRole(Role role);
 
     @Query("""
         SELECT u FROM User u

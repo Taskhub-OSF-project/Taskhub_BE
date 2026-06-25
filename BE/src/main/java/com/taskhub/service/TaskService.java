@@ -222,7 +222,7 @@ public class TaskService {
     @Transactional
     public TaskResponse publishTask(Long taskId) {
         Task task = findOwnedTask(taskId);
-        transition(task, TaskStatus.LOCKED);
+        transition(task, TaskStatus.ACTIVE);
         return toResponse(taskRepository.save(task));
     }
 
