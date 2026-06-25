@@ -2,6 +2,7 @@ package com.taskhub.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -13,7 +14,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 @Slf4j
 public class EmailService {
-    private final JavaMailSender mailSender;
+    private final ObjectProvider<JavaMailSender> mailSenderProvider;
 
     @Value("${spring.mail.username:noreply@taskhub.local}")
     private String fromEmail;
@@ -104,6 +105,11 @@ public class EmailService {
     private void sendEmail(String to, String subject, String body) {
         if (!emailEnabled) {
             log.info("[EMAIL MOCK] emailEnabled=false — would send to: {}, subject: {}", to, subject);
+            return;
+        }
+        JavaMailSender mailSender = mailSenderProvider.getIfAvailable();
+        if (mailSender == null) {
+            log.error("Email sending is enabled, but JavaMailSender is not configured");
             return;
         }
         try {
