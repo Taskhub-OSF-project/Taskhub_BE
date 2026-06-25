@@ -39,3 +39,29 @@ CREATE INDEX IF NOT EXISTS idx_notifications_user_read
 
 CREATE INDEX IF NOT EXISTS idx_notifications_user_created
     ON notifications(user_id, created_at);
+
+ALTER TABLE tasks
+    ADD COLUMN IF NOT EXISTS submission_ai_result_json TEXT,
+    ADD COLUMN IF NOT EXISTS latest_precheck_at TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS precheck_student_id BIGINT,
+    ADD COLUMN IF NOT EXISTS precheck_can_submit BOOLEAN,
+    ADD COLUMN IF NOT EXISTS precheck_submitted_file_paths_json TEXT,
+    ADD COLUMN IF NOT EXISTS revision_count INT,
+    ADD COLUMN IF NOT EXISTS dispute_reason VARCHAR(500),
+    ADD COLUMN IF NOT EXISTS dispute_description TEXT,
+    ADD COLUMN IF NOT EXISTS dispute_ai_report_json TEXT,
+    ADD COLUMN IF NOT EXISTS applicant_count INT;
+
+UPDATE tasks
+SET revision_count = 0
+WHERE revision_count IS NULL;
+
+UPDATE tasks
+SET applicant_count = 0
+WHERE applicant_count IS NULL;
+
+ALTER TABLE tasks
+    ALTER COLUMN revision_count SET DEFAULT 0,
+    ALTER COLUMN revision_count SET NOT NULL,
+    ALTER COLUMN applicant_count SET DEFAULT 0,
+    ALTER COLUMN applicant_count SET NOT NULL;
