@@ -20,6 +20,7 @@ public class CreateTaskRequest {
     private BigDecimal budget;
     @NotNull @Future
     private LocalDateTime deadline;
-    @NotEmpty
+    @NotNull
+    @Size(min = 3, message = "At least 3 acceptance criteria are required")
     private List<@NotBlank String> acceptanceCriteria;
 }

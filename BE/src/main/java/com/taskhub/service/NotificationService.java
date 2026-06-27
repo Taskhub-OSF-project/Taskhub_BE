@@ -49,7 +49,7 @@ public class NotificationService {
         notify(hirerId, NotificationType.TASK_APPLICATION_RECEIVED,
                 "Ứng viên mới cho công việc của bạn",
                 studentName + " vừa ứng tuyển vào công việc \"" + taskTitle + "\".",
-                "/tasks/" + taskId, taskId);
+                "/hirer/tasks/" + taskId, taskId);
     }
 
     @Transactional
@@ -57,7 +57,7 @@ public class NotificationService {
         notify(studentId, NotificationType.TASK_ASSIGNED,
                 "Bạn đã được nhận công việc",
                 "Bạn đã được nhận công việc: \"" + taskTitle + "\".",
-                "/tasks/" + taskId, taskId);
+                "/student/tasks/" + taskId, taskId);
     }
 
     @Transactional
@@ -65,7 +65,7 @@ public class NotificationService {
         notify(studentId, NotificationType.TASK_APPLICATION_ACCEPTED,
                 "Đơn ứng tuyển được chấp nhận",
                 "Đơn ứng tuyển của bạn cho \"" + taskTitle + "\" đã được chấp nhận.",
-                "/tasks/" + taskId, taskId);
+                "/student/tasks/" + taskId, taskId);
     }
 
     public PageResponse<NotificationResponse> listForUser(Long userId, PageRequestDto req) {

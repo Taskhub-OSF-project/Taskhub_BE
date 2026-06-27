@@ -28,6 +28,7 @@ class AuthIntegrationTest {
     @Autowired private ObjectMapper objectMapper;
     @Autowired private RefreshTokenRepository refreshTokenRepository;
 
+
     @Test
     void registerLoginRefreshLogoutFlow() throws Exception {
         RegisterRequest register = RegisterRequest.builder()

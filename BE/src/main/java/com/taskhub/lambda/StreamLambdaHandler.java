@@ -6,6 +6,7 @@ import com.amazonaws.serverless.proxy.model.AwsProxyResponse;
 import com.amazonaws.serverless.proxy.spring.SpringBootLambdaContainerHandler;
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestStreamHandler;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.taskhub.TaskHubApplication;
 
@@ -21,7 +22,15 @@ public class StreamLambdaHandler implements RequestStreamHandler {
 
     @Override
     public void handleRequest(InputStream inputStream, OutputStream outputStream, Context context) throws IOException {
-        AwsProxyRequest request = OBJECT_MAPPER.readValue(inputStream, AwsProxyRequest.class);
+        JsonNode event = OBJECT_MAPPER.readTree(inputStream);
+        if (isWarmupEvent(event)) {
+            getHandler();
+            OBJECT_MAPPER.writeValue(outputStream, Map.of("statusCode", 200, "body", "warm"));
+            outputStream.flush();
+            return;
+        }
+
+        AwsProxyRequest request = OBJECT_MAPPER.treeToValue(event, AwsProxyRequest.class);
         normalizeApiGatewayStagePath(request);
 
         AwsProxyResponse response = isCorsPreflight(request)
@@ -31,6 +40,19 @@ public class StreamLambdaHandler implements RequestStreamHandler {
         addCorsHeaders(response, request);
         OBJECT_MAPPER.writeValue(outputStream, response);
         outputStream.flush();
+    }
+
+    private boolean isWarmupEvent(JsonNode event) {
+        String source = text(event, "source");
+        String action = text(event, "action");
+        return "taskhub.warmer".equals(source)
+                || ("aws.events".equals(source) && "Scheduled Event".equals(text(event, "detail-type")))
+                || "keep-warm".equals(action);
+    }
+
+    private String text(JsonNode node, String field) {
+        JsonNode value = node == null ? null : node.get(field);
+        return value == null || value.isNull() ? null : value.asText();
     }
 
     private SpringBootLambdaContainerHandler<AwsProxyRequest, AwsProxyResponse> getHandler() {

@@ -96,7 +96,9 @@ public abstract class BaseIntegrationTest {
                 com.taskhub.entity.AcceptanceCriteria.builder()
                         .task(task).description("Submit final deliverable file").build(),
                 com.taskhub.entity.AcceptanceCriteria.builder()
-                        .task(task).description("Provide source files in ZIP format").build()
+                        .task(task).description("Provide source files in ZIP format").build(),
+                com.taskhub.entity.AcceptanceCriteria.builder()
+                        .task(task).description("Deliver SVG vector assets source files").build()
         )));
         return taskRepository.save(task);
     }

@@ -52,7 +52,8 @@ class TaskServiceTest extends BaseIntegrationTest {
                 .deadline(LocalDateTime.now().plusDays(14))
                 .acceptanceCriteria(java.util.List.of(
                         "Create 1 PNG logo in 1920x1080 pixels",
-                        "Use maximum 3 colors in design"))
+                        "Use maximum 3 colors in design",
+                        "Deliver SVG vector assets source files"))
                 .build();
 
         TaskResponse resp = taskService.createTask(req);
@@ -71,7 +72,10 @@ class TaskServiceTest extends BaseIntegrationTest {
         CreateTaskRequest req = CreateTaskRequest.builder()
                 .title("Task").description("Desc")
                 .budget(new BigDecimal("100")).deadline(LocalDateTime.now().plusDays(3))
-                .acceptanceCriteria(java.util.List.of("Build functional code"))
+                .acceptanceCriteria(java.util.List.of(
+                        "Build functional code",
+                        "Deliver source package files",
+                        "Clean code with comments"))
                 .build();
 
         assertThrows(TaskHubException.class, () -> taskService.createTask(req));

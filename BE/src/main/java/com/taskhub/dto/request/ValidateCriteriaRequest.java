@@ -6,6 +6,7 @@ import java.util.List;
 
 @Data @Builder @NoArgsConstructor @AllArgsConstructor
 public class ValidateCriteriaRequest {
-    @NotEmpty
+    @jakarta.validation.constraints.NotNull
+    @jakarta.validation.constraints.Size(min = 3, message = "At least 3 acceptance criteria are required")
     private List<@jakarta.validation.constraints.NotBlank String> acceptanceCriteria;
 }

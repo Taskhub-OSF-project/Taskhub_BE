@@ -22,6 +22,7 @@ public class PatchTaskRequest {
     @Size(max = 100)
     private String category;
 
+    @Size(min = 3, message = "At least 3 acceptance criteria are required")
     private List<@NotBlank String> acceptanceCriteria;
 }
 

@@ -165,9 +165,9 @@ public class DisputeService {
                 notifyDisputeResolved(task, message);
             }
             case REQUEST_REVISION -> {
-                escrowService.refundDisputeToRevision(taskId);
+                escrowService.resolveDisputeToRevision(taskId);
                 newStatus = TaskStatus.IN_PROGRESS;
-                message = "Dispute resolved: refund issued, task returned for revision";
+                message = "Dispute resolved: task returned for revision";
                 recordEvent(task, "RESOLVED_REVISION", hirer.getId(), hirer.getRole().name(),
                         message, null, action.name());
                 notifyDisputeResolved(task, message);
@@ -216,9 +216,9 @@ public class DisputeService {
                         "Admin override: " + message, null, action.name());
             }
             case REQUEST_REVISION -> {
-                escrowService.refundDisputeToRevision(taskId);
+                escrowService.resolveDisputeToRevision(taskId);
                 newStatus = TaskStatus.IN_PROGRESS;
-                message = "Admin resolved: refund issued, task returned for revision";
+                message = "Admin resolved: task returned for revision";
                 recordEvent(task, "ADMIN_RESOLVED_REVISION", admin.getId(), "ADMIN",
                         "Admin override: " + message, null, action.name());
             }

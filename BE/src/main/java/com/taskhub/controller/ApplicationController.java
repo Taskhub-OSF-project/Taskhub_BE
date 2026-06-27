@@ -56,6 +56,7 @@ public class ApplicationController {
     }
 
     @GetMapping("/task/{taskId}")
+    @PreAuthorize("hasAnyRole('HIRER', 'ADMIN')")
     public ResponseEntity<ApiResponse<PageResponse<ApplicationResponse>>> taskApps(
             @PathVariable Long taskId,
             @RequestParam(defaultValue = "0") int page,

@@ -58,6 +58,12 @@ Resources:
           SUPABASE_URL: !Ref SupabaseUrl
           SUPABASE_SERVICE_ROLE_KEY: !Ref SupabaseServiceRoleKey
       Events:
+        Warmup:
+          Type: Schedule
+          Properties:
+            Schedule: rate(5 minutes)
+            Enabled: true
+            Input: '{"source":"taskhub.warmer","action":"keep-warm"}'
         Api:
           Type: Api
           Properties:

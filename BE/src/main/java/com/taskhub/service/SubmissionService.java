@@ -60,6 +60,9 @@ public class SubmissionService {
         if (task.getStatus() != TaskStatus.IN_PROGRESS) {
             throw TaskHubException.badRequest("Task is not IN_PROGRESS");
         }
+        if (!escrowService.isEscrowFunded(taskId)) {
+            throw TaskHubException.badRequest("Escrow is not funded for this task");
+        }
         if (task.getAssignedTo() == null || !task.getAssignedTo().getId().equals(student.getId())) {
             throw TaskHubException.forbidden("Not assigned to you");
         }
@@ -94,6 +97,9 @@ public class SubmissionService {
         Task task = taskService.findTask(taskId);
         if (task.getStatus() != TaskStatus.IN_PROGRESS) {
             throw TaskHubException.badRequest("Task is not IN_PROGRESS");
+        }
+        if (!escrowService.isEscrowFunded(taskId)) {
+            throw TaskHubException.badRequest("Escrow is not funded for this task");
         }
         if (task.getAssignedTo() == null || !task.getAssignedTo().getId().equals(student.getId())) {
             throw TaskHubException.forbidden("Not assigned to you");

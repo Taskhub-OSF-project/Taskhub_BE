@@ -33,7 +33,6 @@ public class TaskService {
         if (hirer.getRole() != Role.HIRER)
             throw TaskHubException.forbidden("Only hirers can create tasks");
 
-        walletService.requireSufficientForCreateTask(req.getBudget());
         List<String> criteria = normalizeCriteria(req.getAcceptanceCriteria());
         requireValidCriteria(criteria);
 
@@ -261,6 +260,9 @@ public class TaskService {
     }
 
     public void requireValidCriteria(List<String> criteria) {
+        if (criteria == null || criteria.size() < 3) {
+            throw TaskHubException.badRequest("Acceptance criteria must have at least 3 items");
+        }
         var result = aiValidation.validateCriteriaEnhanced(criteria);
         if (!result.valid()) {
             throw TaskHubException.invalidCriteria(result.message(), result);
@@ -314,8 +316,8 @@ public class TaskService {
     }
 
     private List<String> normalizeCriteria(List<String> criteria) {
-        if (criteria == null || criteria.isEmpty())
-            throw TaskHubException.badRequest("Acceptance criteria cannot be empty");
+        if (criteria == null || criteria.size() < 3)
+            throw TaskHubException.badRequest("Acceptance criteria must have at least 3 items");
         for (String c : criteria) {
             if (c == null || c.trim().isEmpty())
                 throw TaskHubException.badRequest("Acceptance criteria cannot be blank");

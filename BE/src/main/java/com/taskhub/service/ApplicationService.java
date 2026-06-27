@@ -34,6 +34,8 @@ public class ApplicationService {
         Task task = taskService.findTask(taskId);
         if (task.getStatus() != TaskStatus.ACTIVE)
             throw TaskHubException.badRequest("Task is not accepting applications");
+        if (task.getDeadline() != null && task.getDeadline().isBefore(java.time.LocalDateTime.now()))
+            throw TaskHubException.badRequest("Task deadline has passed");
         if (appRepo.existsByTaskIdAndStudentId(taskId, student.getId()))
             throw TaskHubException.badRequest("Already applied");
 
@@ -67,6 +69,9 @@ public class ApplicationService {
         if (task.getStatus() != TaskStatus.ACTIVE)
             throw TaskHubException.badRequest("Task is not ACTIVE");
 
+        if (app.getStatus() != ApplicationStatus.PENDING)
+            throw TaskHubException.badRequest("Application is not PENDING");
+
         app.setStatus(ApplicationStatus.ACCEPTED);
         appRepo.save(app);
 
@@ -75,7 +80,6 @@ public class ApplicationService {
         taskRepo.save(task);
 
         // Notify student they were accepted
-        notificationService.notifyTaskAssigned(app.getStudent().getId(), task.getTitle(), task.getId());
         notificationService.notifyApplicationAccepted(app.getStudent().getId(), task.getTitle(), task.getId());
 
         // Reject other applications
@@ -85,7 +89,17 @@ public class ApplicationService {
     }
 
     public PageResponse<ApplicationResponse> getTaskApplications(Long taskId, PageRequestDto pageReq) {
-        Page< TaskApplication> page = appRepo.findByTaskId(taskId,
+        User currentUser = AuthUtil.getCurrentUser();
+        Task task = taskService.findTask(taskId);
+        if (currentUser.getRole() == Role.HIRER) {
+            if (!task.getHirer().getId().equals(currentUser.getId())) {
+                throw TaskHubException.forbidden("You do not own this task");
+            }
+        } else if (currentUser.getRole() != Role.ADMIN) {
+            throw TaskHubException.forbidden("Only the task owner or admins can view task applications");
+        }
+
+        Page<TaskApplication> page = appRepo.findByTaskId(taskId,
                 org.springframework.data.domain.PageRequest.of(pageReq.getPage(), Math.min(pageReq.getSize(), 100),
                         Sort.by(Sort.Direction.DESC, "appliedAt")));
         return PageResponse.<ApplicationResponse>builder()

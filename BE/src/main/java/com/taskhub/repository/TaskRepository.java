@@ -22,10 +22,10 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
     Page<Task> findByAssignedToIdAndStatus(Long studentId, TaskStatus status, Pageable pageable);
     Page<Task> findByStatusIn(List<TaskStatus> statuses, Pageable pageable);
 
-    @Query("SELECT t FROM Task t WHERE t.status = :status AND t.hirer.id != :excludeUserId ORDER BY t.createdAt DESC")
+    @Query("SELECT t FROM Task t WHERE t.status = :status AND t.hirer.id != :excludeUserId AND (t.deadline IS NULL OR t.deadline > CURRENT_TIMESTAMP) ORDER BY t.createdAt DESC")
     Page<Task> findAvailableTasks(@Param("status") TaskStatus status, @Param("excludeUserId") Long excludeUserId, Pageable pageable);
 
-    @Query("SELECT t FROM Task t WHERE t.status IN :statuses AND t.hirer.id != :excludeUserId ORDER BY t.createdAt DESC")
+    @Query("SELECT t FROM Task t WHERE t.status IN :statuses AND t.hirer.id != :excludeUserId AND (t.deadline IS NULL OR t.deadline > CURRENT_TIMESTAMP) ORDER BY t.createdAt DESC")
     Page<Task> findAvailableTasks(@Param("statuses") List<TaskStatus> statuses, @Param("excludeUserId") Long excludeUserId, Pageable pageable);
 
     Page<Task> findByStatus(TaskStatus status, Pageable pageable);
