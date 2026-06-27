@@ -11,9 +11,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
@@ -25,7 +25,6 @@ public class AuditService {
     private static final Logger AUDIT = LoggerFactory.getLogger("AUDIT");
 
     private final SecurityEventRepository securityEventRepository;
-    private final TransactionTemplate transactionTemplate;
 
     public void record(String event, String email, String detail) {
         String ip = clientIp();
@@ -38,15 +37,15 @@ public class AuditService {
         record(event, email, null);
     }
 
+    @Async
     void persistAsync(String event, String email, String ip, String detail) {
         try {
-            transactionTemplate.executeWithoutResult(status ->
-                    securityEventRepository.save(SecurityEvent.builder()
-                            .eventType(event)
-                            .email(email)
-                            .ipAddress(ip)
-                            .detail(detail)
-                            .build()));
+            securityEventRepository.save(SecurityEvent.builder()
+                    .eventType(event)
+                    .email(email)
+                    .ipAddress(ip)
+                    .detail(detail)
+                    .build());
         } catch (Exception ex) {
             AUDIT.warn("Failed to persist security event {}: {}", event, ex.getMessage());
         }
