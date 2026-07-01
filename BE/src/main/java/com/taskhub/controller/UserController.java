@@ -49,6 +49,13 @@ public class UserController {
         return ResponseEntity.ok(ApiResponse.ok("Availability updated", userService.setAvailability(userId, available)));
     }
 
+    @PostMapping("/switch-role")
+    public ResponseEntity<ApiResponse<com.taskhub.dto.response.AuthResponse>> switchRole() {
+        Long userId = AuthUtil.getCurrentUser().getId();
+        return ResponseEntity.ok(ApiResponse.ok("Role switched",
+                userService.switchRoleAndReturnToken(userId)));
+    }
+
     @PatchMapping("/change-password")
     public ResponseEntity<ApiResponse<Void>> changePassword(@Valid @RequestBody ChangePasswordRequest req) {
         Long userId = AuthUtil.getCurrentUser().getId();

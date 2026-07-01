@@ -62,8 +62,8 @@ public class AdminController {
     @PatchMapping("/users/{id}/role")
     public ResponseEntity<ApiResponse<UserProfileResponse>> changeUserRole(
             @PathVariable Long id, @RequestParam String role) {
-        return ResponseEntity.ok(ApiResponse.ok("User role updated",
-                userService.changeUserRole(id, Role.valueOf(role.toUpperCase()))));
+        UserProfileResponse updated = userService.changeUserRole(id, Role.valueOf(role.toUpperCase()));
+        return ResponseEntity.ok(ApiResponse.ok("User role updated", updated));
     }
 
     @PostMapping("/users/{id}/ban")

@@ -91,9 +91,11 @@ public class TaskController {
     @PostMapping(value = "/criteria/extract", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasRole('HIRER')")
     public ResponseEntity<ApiResponse<CriteriaExtractResponse>> extractCriteria(
-            @RequestPart("file") MultipartFile file) {
+            @RequestPart("file") MultipartFile file,
+            @RequestParam(value = "taskDescription", required = false) String taskDescription,
+            @RequestParam(value = "extraRequirements", required = false) String extraRequirements) {
         return ResponseEntity.ok(ApiResponse.ok("Criteria extracted",
-                criteriaExtractionService.extractFromFile(file)));
+                criteriaExtractionService.extractFromFile(file, taskDescription, extraRequirements)));
     }
 
     @PostMapping("/{id}/lock")

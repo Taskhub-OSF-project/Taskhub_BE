@@ -5,6 +5,7 @@ import com.taskhub.dto.PageResponse;
 import com.taskhub.dto.request.ChangePasswordRequest;
 import com.taskhub.dto.request.UpdateProfileRequest;
 import com.taskhub.dto.response.AdminDashboardResponse;
+import com.taskhub.dto.response.AuthResponse;
 import com.taskhub.dto.response.UserProfileResponse;
 import com.taskhub.entity.Task;
 import com.taskhub.entity.User;
@@ -38,11 +39,41 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final RefreshTokenRepository refreshTokenRepository;
     private final AuditService auditService;
+    private final com.taskhub.security.JwtService jwtService;
 
     public UserProfileResponse getProfile(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> TaskHubException.notFound("User not found"));
         return buildProfile(userId);
+    }
+
+    /**
+     * Đổi role của user (HIRER ↔ STUDENT) và trả về AuthResponse chứa
+     * JWT mới mang role vừa đổi để FE cập nhật token.
+     */
+    @Transactional
+    public AuthResponse switchRoleAndReturnToken(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> TaskHubException.notFound("User not found"));
+
+        Role current = user.getRole();
+        if (current == Role.ADMIN) {
+            throw TaskHubException.badRequest("Admin account cannot switch roles");
+        }
+        Role target = (current == Role.HIRER) ? Role.STUDENT : Role.HIRER;
+        user.setRole(target);
+        user = userRepository.save(user);
+        auditService.record("ROLE_SWITCH", user.getEmail(), "Switched from " + current + " to " + target);
+
+        String newToken = jwtService.generateAccessToken(user.getId(), user.getEmail(), target.name());
+        UserProfileResponse profile = buildProfile(user.getId());
+        return AuthResponse.builder()
+                .token(newToken)
+                .userId(user.getId())
+                .email(user.getEmail())
+                .fullName(user.getFullName())
+                .role(target)
+                .build();
     }
 
     @Transactional
@@ -173,6 +204,22 @@ public class UserService {
                 Sort.by(Sort.Direction.DESC, "createdAt"));
         Page<User> page = userRepository.findAll(springPage);
         return toPageResponse(page);
+    }
+
+    @Transactional
+    public UserProfileResponse switchRole(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> TaskHubException.notFound("User not found"));
+
+        Role current = user.getRole();
+        if (current == Role.ADMIN) {
+            throw TaskHubException.badRequest("Admin account cannot switch roles");
+        }
+        Role target = (current == Role.HIRER) ? Role.STUDENT : Role.HIRER;
+        user.setRole(target);
+        user = userRepository.save(user);
+        auditService.record("ROLE_SWITCH", user.getEmail(), "Switched from " + current + " to " + target);
+        return buildProfile(user.getId());
     }
 
     @Transactional

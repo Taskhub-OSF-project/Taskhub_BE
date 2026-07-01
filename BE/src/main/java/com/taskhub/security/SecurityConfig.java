@@ -86,7 +86,8 @@ public class SecurityConfig {
                             "/v3/api-docs/**",
                             "/v3/api-docs/swagger-config",
                             "/api/health",
-                            "/api/auth/**"
+                            "/api/auth/**",
+                            "/api/ai/**"
                     ).permitAll();
                     if (devProfile) {
                         a.requestMatchers("/h2-console/**").permitAll();

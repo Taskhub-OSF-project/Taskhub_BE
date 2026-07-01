@@ -29,6 +29,16 @@ public class Notification {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String body;
 
+    /**
+     * Legacy column kept for backward compatibility with older clients
+     * and external queries that read `message` directly. Hibernate only
+     * writes {@code body} from the JPA entity, so {@code message} is
+     * populated by {@link #onCreate()} to satisfy the database NOT NULL
+     * constraint.
+     */
+    @Column(length = 2000)
+    private String message;
+
     @Column(length = 300)
     private String link;
 
@@ -49,5 +59,8 @@ public class Notification {
     void onCreate() {
         if (createdAt == null) createdAt = LocalDateTime.now();
         if (isRead == null) isRead = false;
+        if (message == null || message.isBlank()) {
+            message = body;
+        }
     }
 }

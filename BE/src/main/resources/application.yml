@@ -37,6 +37,10 @@ app:
     issuer: ${APP_JWT_ISSUER:taskhub}
   cors:
     allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:3000,http://192.168.2.4:5173,http://192.168.2.4:8081,http://192.168.2.4:3000}
+  gemini:
+    api-key: ${APP_GEMINI_API_KEY:}
+    model: ${APP_GEMINI_MODEL:gemini-2.0-flash}
+    enabled: ${APP_GEMINI_ENABLED:true}
   mail:
     frontend-base-url: ${APP_FRONTEND_BASE_URL:http://localhost:5173}
   rate-limit:
