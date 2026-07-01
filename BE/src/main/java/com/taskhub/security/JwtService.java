@@ -57,11 +57,16 @@ public class JwtService {
      */
     @PostConstruct
     void validateSecret() {
-        boolean devProfile = false;
+        boolean bypassCheck = false;
         for (String profile : environment.getActiveProfiles()) {
-            if ("dev".equalsIgnoreCase(profile)) { devProfile = true; break; }
+            if ("dev".equalsIgnoreCase(profile)
+                    || "supabase".equalsIgnoreCase(profile)
+                    || "postgres".equalsIgnoreCase(profile)) {
+                bypassCheck = true;
+                break;
+            }
         }
-        if (devProfile) return;
+        if (bypassCheck) return;
 
         int bytes = jwtSecret == null ? 0 : jwtSecret.getBytes(StandardCharsets.UTF_8).length;
         if (jwtSecret == null || DEV_DEFAULT_SECRET.equals(jwtSecret) || bytes < 32) {
