@@ -25,13 +25,14 @@ jobs:
           POSTGRES_DB: taskhub
           POSTGRES_USER: taskhub
           POSTGRES_PASSWORD: taskhub
-        ports:
-          - 5432:5432
+        # remove host port mapping to avoid collisions
+        #ports:
+        #  - 5432:5432
         options: >-
           --health-cmd "pg_isready -U taskhub -d taskhub"
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 30
 
     steps:
       - uses: actions/checkout@v4
@@ -43,7 +44,26 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
-      # Đã XÓA/COMMENT cái bước Run tests ở đây để nó không bị sập nữa!
+      - name: Wait for Postgres to be available
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y postgresql-client
+          for i in $(seq 1 30); do
+            if PGPASSWORD=taskhub psql -h localhost -U taskhub -d taskhub -c '\q' 2>/dev/null; then
+              echo "Postgres is ready"
+              break
+            fi
+            echo "Waiting for Postgres... (attempt $i)"
+            sleep 2
+          done
 
-      - name: Build JAR (Bỏ qua Test)
+      - name: Run tests
+        env:
+          SPRING_PROFILES_ACTIVE: test
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/taskhub
+          SPRING_DATASOURCE_USERNAME: taskhub
+          SPRING_DATASOURCE_PASSWORD: taskhub
+        run: mvn -B verify
+
+      - name: Build JAR
         run: mvn -B -DskipTests package
