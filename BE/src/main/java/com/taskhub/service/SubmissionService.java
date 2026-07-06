@@ -218,23 +218,9 @@ public class SubmissionService {
         taskRepo.save(task);
         escrowService.releaseEscrow(taskId);
     }
-    private void checkViewPermission(Task task, User currentUser) {
-        boolean isHirerOwner = task.getHirer() != null && task.getHirer().getId().equals(currentUser.getId());
-        boolean isAssignedStudent = task.getAssignedTo() != null && task.getAssignedTo().getId().equals(currentUser.getId());
-
-        if (!isHirerOwner && !isAssignedStudent) {
-            throw TaskHubException.forbidden("You do not have permission to view this task's submissions.");
-        }
-    }
 
     @Transactional(readOnly = true)
     public List<SubmissionResponse> getTaskSubmissions(Long taskId) {
-        User currentUser = AuthUtil.getCurrentUser();
-        Task task = taskService.findTask(taskId);
-
-        // THÊM DÒNG NÀY VÀO: Bắt buộc check quyền trước khi query database
-        checkViewPermission(task, currentUser);
-
         return submissionRepo.findByTaskId(taskId).stream().map(this::toResponse).toList();
     }
 
@@ -245,11 +231,7 @@ public class SubmissionService {
         boolean isHirerOwner = task.getHirer() != null && task.getHirer().getId().equals(currentUser.getId());
         boolean isAssignedStudent = task.getAssignedTo() != null && task.getAssignedTo().getId().equals(currentUser.getId());
         if (!isHirerOwner && !isAssignedStudent) {
-            return LatestSubmissionResultResponse.builder()
-                    .taskId(task.getId())
-                    .taskStatus(task.getStatus())
-                    // Các trường khác mặc định null để bảo mật thông tin
-                    .build();
+            throw TaskHubException.forbidden("Not allowed to view latest submission result");
         }
 
         SubmissionResponse latestSubmission = submissionRepo.findTopByTaskIdOrderBySubmittedAtDesc(taskId)
@@ -281,9 +263,8 @@ public class SubmissionService {
         Task task = taskService.findTask(taskId);
         boolean isHirerOwner = task.getHirer() != null && task.getHirer().getId().equals(currentUser.getId());
         boolean isAssignedStudent = task.getAssignedTo() != null && task.getAssignedTo().getId().equals(currentUser.getId());
-        // SỬA Ở ĐÂY: Trả về List rỗng thay vì throw Exception
         if (!isHirerOwner && !isAssignedStudent) {
-            return List.of();
+            throw TaskHubException.forbidden("Not allowed to view revision history");
         }
 
         return revisionRequestRepo.findByTaskIdOrderByCreatedAtAsc(taskId)

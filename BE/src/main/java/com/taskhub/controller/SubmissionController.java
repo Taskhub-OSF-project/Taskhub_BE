@@ -49,7 +49,6 @@ public class SubmissionController {
     }
 
     @GetMapping("/task/{taskId}")
-    @PreAuthorize("hasAnyRole('HIRER', 'STUDENT')")
     public ResponseEntity<ApiResponse<List<SubmissionResponse>>> taskSubs(@PathVariable Long taskId) {
         return ResponseEntity.ok(ApiResponse.ok(submissionService.getTaskSubmissions(taskId)));
     }
@@ -60,7 +59,6 @@ public class SubmissionController {
     }
 
     @GetMapping("/task/{taskId}/dispute-report")
-    @PreAuthorize("hasAnyRole('HIRER', 'STUDENT')")
     public ResponseEntity<ApiResponse<String>> disputeReport(@PathVariable Long taskId) {
         return ResponseEntity.ok(ApiResponse.ok(submissionService.generateDisputeReport(taskId)));
     }
