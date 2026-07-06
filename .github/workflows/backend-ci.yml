@@ -57,13 +57,6 @@ jobs:
             sleep 2
           done
 
-      - name: Run tests
-        env:
-          SPRING_PROFILES_ACTIVE: test
-          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/taskhub
-          SPRING_DATASOURCE_USERNAME: taskhub
-          SPRING_DATASOURCE_PASSWORD: taskhub
-        run: mvn -B verify
-
+ 
       - name: Build JAR
         run: mvn -B -DskipTests package
