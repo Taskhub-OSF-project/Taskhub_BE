@@ -12,6 +12,9 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.MultipartException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
+import java.util.List;
+import java.util.Map;
+
 /**
  * Handler chuẩn hóa response lỗi cho toàn bộ API.
  * Thuộc module Exception, gom các lỗi nghiệp vụ/validation.
@@ -45,13 +48,40 @@ public class GlobalExceptionHandler {
 
     /**
      * Bắt lỗi validate từ @Valid.
+     * Trả chi tiết field nào lỗi và lý do.
      */
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ApiResponse<Void>> handleValidation(MethodArgumentNotValidException ex) {
-        String msg = ex.getBindingResult().getFieldErrors().stream()
-                .map(e -> e.getField() + ": " + e.getDefaultMessage())
-                .reduce((a, b) -> a + "; " + b).orElse("Validation failed");
-        return ResponseEntity.badRequest().body(ApiResponse.error(msg));
+    public ResponseEntity<ApiResponse<Object>> handleValidation(MethodArgumentNotValidException ex) {
+        List<Map<String, String>> fieldErrors = ex.getBindingResult().getFieldErrors().stream()
+                .map(e -> Map.of(
+                        "field", e.getField(),
+                        "message", getFriendlyMessage(e.getField(), e.getDefaultMessage())
+                ))
+                .toList();
+
+        String summary = fieldErrors.stream()
+                .map(e -> e.get("message"))
+                .reduce((a, b) -> a + "; " + b)
+                .orElse("Validation failed");
+
+        ApiResponse<Object> body = ApiResponse.<Object>builder()
+                .success(false)
+                .message(summary)
+                .errorCode("VALIDATION_ERROR")
+                .data(fieldErrors)
+                .build();
+        return ResponseEntity.badRequest().body(body);
+    }
+
+    private String getFriendlyMessage(String field, String defaultMsg) {
+        if (field == null) return defaultMsg;
+        return switch (field.toLowerCase()) {
+            case "email" -> "Email không hợp lệ. Vui lòng nhập địa chỉ email đúng format (ví dụ: email@example.com)";
+            case "password" -> "Mật khẩu không được để trống";
+            case "fullname", "fullName", "name" -> "Họ và tên không được để trống";
+            case "role" -> "Vai trò không hợp lệ";
+            default -> defaultMsg;
+        };
     }
 
     @ExceptionHandler(MaxUploadSizeExceededException.class)

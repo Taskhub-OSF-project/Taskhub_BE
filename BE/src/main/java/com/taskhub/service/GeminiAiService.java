@@ -24,6 +24,12 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.text.PDFTextStripper;
+import org.apache.poi.xwpf.usermodel.XWPFDocument;
+import org.apache.poi.xwpf.usermodel.XWPFParagraph;
+
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -103,6 +109,221 @@ public class GeminiAiService {
                 .build();
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // CRITERIA FROM JOB DESCRIPTION
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    public AiCriteriaResponse suggestCriteriaFromJob(AiCriteriaFromJobRequest request) {
+        String prompt = buildCriteriaFromJobPrompt(request);
+        String reply = callGemini(prompt);
+        int num = request.getNumSuggestions() != null ? request.getNumSuggestions() : 5;
+        List<AiCriteriaResponse.CriteriaSuggestion> suggestions = parseCriteriaSuggestions(reply, num);
+
+        return AiCriteriaResponse.builder()
+                .suggestions(suggestions)
+                .reasoning(reply)
+                .generatedAt(LocalDateTime.now())
+                .build();
+    }
+
+    private String buildCriteriaFromJobPrompt(AiCriteriaFromJobRequest request) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("""
+                ## Criteria Suggestion from Job Description
+
+                You are an expert at designing clear, measurable acceptance criteria for freelance tasks.
+
+                Analyze the job description below and generate specific, objective evaluation criteria.
+                Each criterion should be:
+                - SPECIFIC: clearly states what is expected
+                - MEASURABLE: can be objectively verified (file count, format, size, %, deadline, etc.)
+                - UNAMBIGUOUS: no room for interpretation disputes
+                """);
+
+        sb.append("\nJob title: ").append(request.getJobTitle()).append("\n");
+        if (request.getJobDescription() != null && !request.getJobDescription().isBlank()) {
+            sb.append("Job description:\n").append(request.getJobDescription()).append("\n");
+        }
+        if (request.getCategory() != null && !request.getCategory().isBlank()) {
+            sb.append("Category: ").append(request.getCategory()).append("\n");
+        }
+
+        int num = request.getNumSuggestions() != null ? request.getNumSuggestions() : 5;
+        sb.append("\n## Output Format\n");
+        sb.append("Generate exactly ").append(num).append(" criteria. Return as a JSON array:\n");
+        sb.append("""
+                [
+                  {
+                    "name": "short descriptive name",
+                    "description": "detailed description of deliverable — include numbers, formats, quantities when possible",
+                    "maxScore": 10,
+                    "evaluationGuide": "objective scoring method — how to verify this criterion is met"
+                  }
+                ]
+                """);
+
+        sb.append("\n## Scoring Guidance for Users\n");
+        sb.append("After evaluation, map percentage of criteria met to star rating:\n");
+        sb.append("- 95-100%: ⭐⭐⭐⭐⭐ Xuất sắc\n");
+        sb.append("- 85-94%:   ⭐⭐⭐⭐☆ Tốt\n");
+        sb.append("- 70-84%:   ⭐⭐⭐☆☆ Khá\n");
+        sb.append("- 50-69%:   ⭐⭐☆☆☆ Trung bình\n");
+        sb.append("- Below 50%: ⭐☆☆☆☆ Chưa đạt\n");
+
+        sb.append("\nBe specific to the job type (code, design, writing, data entry, etc.) and include measurable thresholds.\n");
+
+        return sb.toString();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // TASK AUTO-GENERATION
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    public AiGenerateTaskResponse generateTask(AiGenerateTaskRequest request) {
+        String prompt = buildGenerateTaskPrompt(request);
+        String reply = callGemini(prompt);
+        AiGenerateTaskResponse response = parseGenerateTaskResponse(reply);
+        return AiGenerateTaskResponse.builder()
+                .rawAiContent(reply)
+                .generatedAt(LocalDateTime.now())
+                .warnings(validateGeneratedTask(response))
+                .build();
+    }
+
+    private String buildGenerateTaskPrompt(AiGenerateTaskRequest request) {
+        String lang = "Vietnamese";
+        if (request.getLanguage() == AiGenerateTaskRequest.Language.ENGLISH) {
+            lang = "English";
+        }
+
+        return """
+                ## Task Auto-Generation Request
+
+                You are an expert freelance project manager. Based on a brief description, generate a complete task specification.
+
+                ## Brief
+                %s
+
+                ## Context
+                Category hint: %s
+                Language for output: %s
+
+                ## Your Task
+                Create a comprehensive task specification from this brief. Return a JSON object with:
+
+                {
+                  "title": "Clear, specific task title (max 100 chars)",
+                  "description": "Detailed description of the work to be done, written clearly for freelancers. Include scope, deliverables, and context.",
+                  "category": "Most appropriate category from: Programming, Design, Writing, Data Entry, Marketing, Video, Audio, Translation, Other",
+                  "suggestedBudget": number (estimated fair price in VND for Vietnamese market),
+                  "suggestedDeadline": ISO date string (deadline, typically 3-30 days from now),
+                  "skillsRequired": ["list of required skills"],
+                  "difficultyLevel": "Dễ" | "Trung bình" | "Khó" | "Chuyên gia",
+                  "estimatedHours": number (estimated work hours),
+                  "estimatedDuration": "e.g. '2-3 ngày', '1 tuần'",
+                  "suggestedCriteria": [
+                    {
+                      "name": "criterion name",
+                      "description": "detailed deliverable description with measurable terms",
+                      "maxScore": 10,
+                      "evaluationGuide": "how to objectively score this criterion"
+                    }
+                  ]
+                }
+
+                ## Rules
+                - Title must be clear and specific, not vague
+                - Description must cover scope, format, quantity requirements
+                - Budget should be realistic for Vietnamese market rates
+                - Deadline should match complexity
+                - Generate 3-5 suggested criteria, all measurable
+                - SkillsRequired should list 2-5 relevant skills
+                - suggestedBudget in VND only (no currency symbol)
+
+                Return ONLY the JSON object, no markdown code blocks or explanations.
+                """.formatted(
+                request.getBrief(),
+                request.getCategory() != null ? request.getCategory() : "Not specified",
+                lang
+        );
+    }
+
+    private AiGenerateTaskResponse parseGenerateTaskResponse(String text) {
+        try {
+            text = text.trim();
+            if (text.startsWith("```")) {
+                int start = text.indexOf("```") + 3;
+                int end = text.lastIndexOf("```");
+                if (end > start) text = text.substring(start, end).trim();
+                if (text.startsWith("json")) text = text.substring(4).trim();
+            }
+
+            if (text.startsWith("{")) {
+                Map<String, Object> data = objectMapper.readValue(text, new TypeReference<>() {});
+
+                List<AiCriteriaResponse.CriteriaSuggestion> criteria = new ArrayList<>();
+                if (data.get("suggestedCriteria") != null) {
+                    for (Map<String, Object> c : (List<Map<String, Object>>) data.get("suggestedCriteria")) {
+                        criteria.add(AiCriteriaResponse.CriteriaSuggestion.builder()
+                                .name((String) c.get("name"))
+                                .description((String) c.get("description"))
+                                .maxScore(c.get("maxScore") != null ? ((Number) c.get("maxScore")).intValue() : 10)
+                                .evaluationGuide((String) c.get("evaluationGuide"))
+                                .build());
+                    }
+                }
+
+                List<String> skills = new ArrayList<>();
+                if (data.get("skillsRequired") != null) {
+                    skills = new ArrayList<>((List<String>) data.get("skillsRequired"));
+                }
+
+                String deadlineStr = (String) data.get("suggestedDeadline");
+                LocalDateTime deadline = null;
+                if (deadlineStr != null && !deadlineStr.isBlank()) {
+                    try { deadline = LocalDateTime.parse(deadlineStr); } catch (Exception ignored) {}
+                }
+
+                return AiGenerateTaskResponse.builder()
+                        .title((String) data.get("title"))
+                        .description((String) data.get("description"))
+                        .category((String) data.get("category"))
+                        .suggestedBudget(toBigDecimal(data.get("suggestedBudget")))
+                        .suggestedDeadline(deadline)
+                        .skillsRequired(skills)
+                        .difficultyLevel((String) data.get("difficultyLevel"))
+                        .estimatedHours(data.get("estimatedHours") != null ? ((Number) data.get("estimatedHours")).intValue() : null)
+                        .estimatedDuration((String) data.get("estimatedDuration"))
+                        .suggestedCriteria(criteria)
+                        .build();
+            }
+        } catch (Exception e) {
+            log.warn("Failed to parse generated task JSON: {}", e.getMessage());
+        }
+        return AiGenerateTaskResponse.builder()
+                .title("Vui lòng xem nội dung AI bên dưới")
+                .description(text.substring(0, Math.min(500, text.length())))
+                .suggestedBudget(java.math.BigDecimal.valueOf(500000))
+                .build();
+    }
+
+    private List<String> validateGeneratedTask(AiGenerateTaskResponse response) {
+        List<String> warnings = new ArrayList<>();
+        if (response.getTitle() == null || response.getTitle().isBlank()) {
+            warnings.add("Title is missing or empty");
+        }
+        if (response.getDescription() == null || response.getDescription().length() < 50) {
+            warnings.add("Description is too short or missing");
+        }
+        if (response.getSuggestedBudget() == null || response.getSuggestedBudget().compareTo(java.math.BigDecimal.ZERO) <= 0) {
+            warnings.add("Suggested budget is missing or invalid");
+        }
+        if (response.getSuggestedCriteria() == null || response.getSuggestedCriteria().isEmpty()) {
+            warnings.add("No suggested criteria generated");
+        }
+        return warnings;
+    }
+
     /**
      * Gợi ý tiêu chí từ brief dạng tự do (thường là text trích từ file PDF /
      * DOCX / TXT + mô tả task do người dùng nhập). Không cần task entity.
@@ -125,26 +346,47 @@ public class GeminiAiService {
 
     private String buildBriefCriteriaPrompt(String context, String fileType, String fileName) {
         return """
-                You are an expert at extracting acceptance criteria from Vietnamese task briefs.
+                Bạn là chuyên gia thiết kế tiêu chí nghiệm thu cho công việc freelance.
 
-                ## File detected: %s (%s)
-                Filename: %s
+                ## File đã upload: %s (%s)
+                Tên file: %s
 
-                ## Brief / description (đã gộp nội dung trích từ file + mô tả do hirer nhập):
+                ## Nội dung trích từ file / brief:
                 %s
 
-                ## Yêu cầu
-                Trích ra tối đa 5 tiêu chí nghiệm thu CỤ THỂ, ĐO LƯỜNG ĐƯỢC, dựa trên brief phía trên.
+                ## Nhiệm vụ
+                Phân tích nội dung brief phía trên và trích xuất tối đa 5 tiêu chí nghiệm thu CỤ THỂ và ĐO LƯỜNG ĐƯỢC.
 
-                Mỗi tiêu chí phải có:
-                - name: ngắn gọn, là danh từ nghiệm vụ
-                - description: mô tả CHI TIẾT deliverable — bao gồm số lượng, định dạng file, kích thước, deadline, hoặc % đạt yêu cầu (nếu brief đề cập)
-                - maxScore: tối đa (mặc định 10, hoặc 20 nếu tiêu chí nặng)
-                - evaluationGuide: cách chấm điểm (objective)
+                ## Tiêu chuẩn bắt buộc cho mỗi tiêu chí:
 
-                Nếu brief quá ngắn / không đủ thông tin, hãy đưa ra các tiêu chí mặc định hợp lý cho loại file %s và ghi rõ trong evaluationGuide "sử dụng thông tin mặc định vì brief thiếu chi tiết".
+                1. **name**: Tên ngắn gọn, là cụm danh từ mô tả deliverable cụ thể (ví dụ: "Bài viết SEO 1500 từ", "Logo vector SVG", "Dashboard React")
 
-                Trả về JSON array: [{name, description, maxScore, evaluationGuide}].
+                2. **description**: PHẢI bao gồm TỐI THIỂU 3 trong các thông tin sau:
+                   - Số lượng/chữ lượng cụ thể (ví dụ: "1500-2000 từ", "tối thiểu 5 section")
+                   - Định dạng file yêu cầu (PDF, DOCX, PNG, SVG, v.v.)
+                   - Kích thước/độ phân giải (ví dụ: 1920x1080px, A4)
+                   - Deadline/ngày giao (nếu có trong brief)
+                   - Yêu cầu kỹ thuật cụ thể (font chữ, màu sắc, framework)
+                   - Tiêu chuẩn chất lượng (% hoàn thành, tỷ lệ đạt yêu cầu)
+                   - Ràng buộc bắt buộc (không watermark, không Plagiarism)
+
+                3. **maxScore**: Điểm tối đa (10-20, tùy mức quan trọng của tiêu chí)
+
+                4. **evaluationGuide**: CÁCH CHẤM ĐIỂM CỤ THỂ:
+                   - Liệt kê các mốc điểm (0%, 50%, 80%, 100%)
+                   - Mô tả rõ điều kiện đạt mỗi mốc
+                   - VD: "0 điểm: không có file; 5 điểm: có file nhưng thiếu nội dung; 8 điểm: đủ nội dung nhưng chưa đúng format; 10 điểm: đầy đủ và đúng yêu cầu"
+
+                ## QUAN TRỌNG:
+                - Nếu brief đề cập số lượng cụ thể (ví dụ: "3 banner", "10 trang"), phải dùng CON SỐ ĐÓ trong criteria
+                - Nếu brief đề cập chất lượng (ví dụ: "chuyên nghiệp", "sạch sẽ"), phải định nghĩa rõ "chuyên nghiệp/sạch sẽ" = những tiêu chí nào
+                - Nếu brief KHÔNG có thông tin cụ thể, hãy dùng tiêu chí mặc định HỢP LÝ cho loại file %s và ghi rõ trong evaluationGuide
+
+                ## Output Format
+                Trả về JSON array với cấu trúc:
+                [{"name": "...", "description": "... (CHI TIẾT, có số)", "maxScore": 10, "evaluationGuide": "..."}]
+
+                KHÔNG trả về text giải thích, chỉ trả về JSON array.
                 """.formatted(fileType, fileName, fileName, context, fileType);
     }
 
@@ -189,6 +431,21 @@ public class GeminiAiService {
     public AiChatResponse chat(AiChatRequest request, String userId) {
         AiChatSession session = resolveSession(request, userId);
 
+        // Save user's current message
+        AiChatMessage userMsg = AiChatMessage.builder()
+                .sessionId(session.getId())
+                .role("USER")
+                .content(request.getMessage())
+                .attachmentRef(request.getAttachmentUrl())
+                .build();
+        messageRepository.save(userMsg);
+
+        // Update session message count
+        session.setMessageCount(session.getMessageCount() + 1);
+        session.setLastActiveAt(LocalDateTime.now());
+        sessionRepository.save(session);
+
+        // Rebuild context with updated history (includes system prompt + all messages)
         List<AiChatMessage> history = messageRepository.findBySessionIdOrderByCreatedAtAsc(session.getId());
         String contextPrompt = buildChatContext(history, request);
 
@@ -200,6 +457,11 @@ public class GeminiAiService {
                 .content(reply)
                 .build();
         messageRepository.save(aiMsg);
+
+        // Update session after AI response
+        session.setMessageCount(session.getMessageCount() + 1);
+        session.setLastActiveAt(LocalDateTime.now());
+        sessionRepository.save(session);
 
         return AiChatResponse.builder()
                 .messageId(aiMsg.getId())
@@ -235,6 +497,9 @@ public class GeminiAiService {
             map.put("sessionType", s.getSessionType());
             map.put("taskId", s.getTaskId());
             map.put("createdAt", s.getCreatedAt());
+            map.put("lastActiveAt", s.getLastActiveAt());
+            map.put("messageCount", s.getMessageCount());
+            map.put("contextSummary", s.getContextSummary());
             return map;
         }).toList();
     }
@@ -295,20 +560,29 @@ public class GeminiAiService {
 
     private AiChatSession resolveSession(AiChatRequest request, String userId) {
         if (request.getSessionId() != null) {
-            return sessionRepository.findById(request.getSessionId())
+            AiChatSession session = sessionRepository.findById(request.getSessionId())
                     .orElseThrow(() -> TaskHubException.notFound("Session not found"));
+            updateSessionActivity(session);
+            return session;
         }
 
         String sessionType = request.getSessionType() != null ? request.getSessionType() : "CHAT";
+
+        // Build user profile snapshot for this session
+        String userProfileJson = buildUserProfileSnapshot(userId);
+        String userContext = buildUserContextFromProfile(userProfileJson);
 
         AiChatSession session = AiChatSession.builder()
                 .userId(userId)
                 .sessionType(sessionType)
                 .taskId(request.getTaskId() != null ? request.getTaskId().toString() : null)
+                .userProfileJson(userProfileJson)
+                .messageCount(0)
+                .lastActiveAt(LocalDateTime.now())
                 .build();
         session = sessionRepository.save(session);
 
-        String systemPrompt = buildSystemPrompt(sessionType, request.getTaskId());
+        String systemPrompt = buildSystemPrompt(sessionType, request.getTaskId(), userContext);
         AiChatMessage systemMsg = AiChatMessage.builder()
                 .sessionId(session.getId())
                 .role("SYSTEM")
@@ -324,25 +598,153 @@ public class GeminiAiService {
                 .build();
         messageRepository.save(userMsg);
 
+        session.setMessageCount(1);
+        session.setLastActiveAt(LocalDateTime.now());
+        sessionRepository.save(session);
+
         return session;
+    }
+
+    private void updateSessionActivity(AiChatSession session) {
+        session.setLastActiveAt(LocalDateTime.now());
+        sessionRepository.save(session);
+    }
+
+    private String buildUserProfileSnapshot(String userId) {
+        try {
+            User user = userRepository.findById(Long.parseLong(userId)).orElse(null);
+            if (user == null) return "{}";
+
+            Map<String, Object> profile = new LinkedHashMap<>();
+            profile.put("userId", user.getId());
+            profile.put("fullName", user.getFullName());
+            profile.put("email", user.getEmail());
+            profile.put("role", user.getRole() != null ? user.getRole().name() : null);
+            profile.put("bio", user.getBio());
+            profile.put("university", user.getUniversity());
+            profile.put("major", user.getMajor());
+            profile.put("skills", user.getSkills() != null ? user.getSkills() : List.of());
+            profile.put("title", user.getTitle());
+            profile.put("walletBalance", user.getWalletBalance());
+            profile.put("experience", user.getExperience());
+            profile.put("portfolioUrl", user.getPortfolioUrl());
+            profile.put("certifications", user.getCertifications() != null ? user.getCertifications() : List.of());
+            profile.put("languages", user.getLanguages() != null ? user.getLanguages() : List.of());
+            profile.put("isVerified", user.getIsVerified());
+            profile.put("availability", user.getAvailability());
+            profile.put("hourlyRate", user.getHourlyRate());
+
+            return objectMapper.writeValueAsString(profile);
+        } catch (Exception e) {
+            log.warn("Failed to build user profile snapshot: {}", e.getMessage());
+            return "{}";
+        }
+    }
+
+    private String buildUserContextFromProfile(String userProfileJson) {
+        try {
+            if (userProfileJson == null || userProfileJson.equals("{}") || userProfileJson.isBlank()) {
+                return "User profile not available.";
+            }
+            Map<String, Object> profile = objectMapper.readValue(userProfileJson, new TypeReference<>() {});
+
+            StringBuilder sb = new StringBuilder();
+            sb.append("## Current User Profile\n");
+
+            if (profile.get("fullName") != null) {
+                sb.append("- Name: ").append(profile.get("fullName")).append("\n");
+            }
+            if (profile.get("role") != null) {
+                sb.append("- Role: ").append(profile.get("role")).append("\n");
+                String role = (String) profile.get("role");
+                if ("STUDENT".equals(role)) {
+                    sb.append("  → This user is a freelancer/student looking for work\n");
+                } else if ("HIRER".equals(role)) {
+                    sb.append("  → This user is an employer looking to hire freelancers\n");
+                } else if ("ADMIN".equals(role)) {
+                    sb.append("  → This user is an administrator\n");
+                }
+            }
+            if (profile.get("title") != null && !((String) profile.get("title")).isBlank()) {
+                sb.append("- Professional title: ").append(profile.get("title")).append("\n");
+            }
+            if (profile.get("bio") != null && !((String) profile.get("bio")).isBlank()) {
+                sb.append("- Bio: ").append(profile.get("bio")).append("\n");
+            }
+            if (profile.get("skills") != null && !((java.util.List<?>) profile.get("skills")).isEmpty()) {
+                sb.append("- Skills: ").append(String.join(", ", (java.util.List<String>) profile.get("skills"))).append("\n");
+            }
+            if (profile.get("university") != null && !((String) profile.get("university")).isBlank()) {
+                sb.append("- University: ").append(profile.get("university")).append("\n");
+            }
+            if (profile.get("major") != null && !((String) profile.get("major")).isBlank()) {
+                sb.append("- Major: ").append(profile.get("major")).append("\n");
+            }
+            if (profile.get("walletBalance") != null) {
+                sb.append("- Wallet balance: ").append(profile.get("walletBalance")).append(" VND\n");
+            }
+            if (profile.get("isVerified") != null && Boolean.TRUE.equals(profile.get("isVerified"))) {
+                sb.append("- Account: Verified\n");
+            }
+            if (profile.get("availability") != null && !((String) profile.get("availability")).isBlank()) {
+                sb.append("- Availability: ").append(profile.get("availability")).append("\n");
+            }
+            if (profile.get("experience") != null && !((String) profile.get("experience")).isBlank()) {
+                String exp = (String) profile.get("experience");
+                sb.append("- Experience: ").append(exp.length() > 200 ? exp.substring(0, 200) + "..." : exp).append("\n");
+            }
+            if (profile.get("certifications") != null && !((java.util.List<?>) profile.get("certifications")).isEmpty()) {
+                sb.append("- Certifications: ").append(String.join(", ", (java.util.List<String>) profile.get("certifications"))).append("\n");
+            }
+
+            return sb.toString();
+        } catch (Exception e) {
+            log.warn("Failed to build user context: {}", e.getMessage());
+            return "User profile context unavailable.";
+        }
     }
 
     // ── Prompt Builders ────────────────────────────────────────────────────────
 
-    private String buildSystemPrompt(String sessionType, Long taskId) {
-        return """
-                You are TaskHub AI Assistant — a professional, helpful AI for a freelance task management platform.
-                You help users with:
-                - Task progress monitoring and analysis
-                - Evaluation criteria suggestion based on task requirements
-                - File/submission evaluation and feedback
-                - Dispute resolution guidance between employers and freelancers
-                - General Q&A about tasks, submissions, and platform usage
+    private String buildSystemPrompt(String sessionType, Long taskId, String userContext) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(userContext);
+        sb.append("\n\n");
+        sb.append("## Your Role\n");
+        sb.append("You are TaskHub AI Assistant — a professional, helpful AI for a freelance task management platform.\n\n");
+        sb.append("You help users with:\n");
+        sb.append("- Task progress monitoring and analysis\n");
+        sb.append("- Evaluation criteria suggestion based on task requirements\n");
+        sb.append("- File/submission evaluation and feedback (based on % of criteria met → star rating)\n");
+        sb.append("- Dispute resolution guidance between employers and freelancers\n");
+        sb.append("- General Q&A about tasks, submissions, and platform usage\n");
+        sb.append("- Task creation guidance and pricing estimation\n");
+        sb.append("- Personalized recommendations based on user's skills and role\n\n");
 
-                Be specific, actionable, and fair. When evaluating work, be constructive and detailed.
-                For disputes, remain neutral and base recommendations on evidence.
-                Always respond in Vietnamese unless the user writes in another language.
-                """;
+        sb.append("## Context-Aware Behavior\n");
+        sb.append("- If user is a HIRER: suggest task creation, pricing, criteria writing, evaluating submissions\n");
+        sb.append("- If user is a STUDENT: suggest available tasks, skill improvement, profile optimization\n");
+        sb.append("- If user asks about their wallet or balance, use the profile data above\n");
+        sb.append("- If user mentions skills, connect with their listed skills for relevant recommendations\n\n");
+
+        sb.append("## Evaluation Star Rating System\n");
+        sb.append("When evaluating submissions, use this star rating based on % of criteria met:\n");
+        sb.append("- 95-100% criteria met: ⭐⭐⭐⭐⭐ Xuất sắc\n");
+        sb.append("- 85-94% criteria met:   ⭐⭐⭐⭐☆ Tốt\n");
+        sb.append("- 70-84% criteria met:   ⭐⭐⭐☆☆ Khá\n");
+        sb.append("- 50-69% criteria met:   ⭐⭐☆☆☆ Trung bình\n");
+        sb.append("- Below 50%:              ⭐☆☆☆☆ Chưa đạt\n\n");
+
+        sb.append("Be specific, actionable, and fair. When evaluating work, be constructive and detailed.\n");
+        sb.append("For disputes, remain neutral and base recommendations on evidence.\n");
+        sb.append("Always respond in Vietnamese unless the user writes in another language.\n");
+
+        if (taskId != null) {
+            sb.append("\n## Current Task Context\n");
+            sb.append("Task ID: ").append(taskId).append(" (relevant information will be provided in the chat)\n");
+        }
+
+        return sb.toString();
     }
 
     private String buildProgressPrompt(Task task, List<Submission> submissions, String userRole) {
@@ -452,13 +854,406 @@ public class GeminiAiService {
 
     private String buildChatContext(List<AiChatMessage> history, AiChatRequest current) {
         StringBuilder sb = new StringBuilder();
-        sb.append("## Chat History\n\n");
+
+        // Find system prompt (user profile context)
+        for (AiChatMessage msg : history) {
+            if ("SYSTEM".equals(msg.getRole())) {
+                sb.append(msg.getContent()).append("\n\n---\n\n");
+                break;
+            }
+        }
+
+        // Chat history (skip system prompt)
+        sb.append("## Conversation History\n\n");
+        int count = 0;
         for (AiChatMessage msg : history) {
             if ("SYSTEM".equals(msg.getRole())) continue;
-            sb.append(msg.getRole()).append(": ").append(msg.getContent()).append("\n\n");
+            if (count > 0) { // skip first user message (already included in new message)
+                sb.append(msg.getRole()).append(": ").append(msg.getContent()).append("\n\n");
+            }
+            count++;
         }
-        sb.append("## Current Message\n").append(current.getMessage());
+        sb.append("## New Message from User\n").append(current.getMessage());
         return sb.toString();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // TASK PRICING
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    public AiPricingResponse estimateTaskPrice(AiPricingRequest request) {
+        String prompt = buildPricingPrompt(request);
+        String reply = callGemini(prompt);
+        return parsePricingResponse(reply, request);
+    }
+
+    private String buildPricingPrompt(AiPricingRequest request) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("## Task Pricing Request\n\n");
+        sb.append("You are an expert freelancer pricing analyst for the Vietnamese market.\n\n");
+        sb.append("Task title: ").append(request.getTaskTitle()).append("\n");
+        if (request.getTaskDescription() != null && !request.getTaskDescription().isBlank()) {
+            sb.append("Description: ").append(request.getTaskDescription()).append("\n");
+        }
+        if (request.getCategory() != null && !request.getCategory().isBlank()) {
+            sb.append("Category: ").append(request.getCategory()).append("\n");
+        }
+        if (request.getDeadline() != null) {
+            sb.append("Deadline: ").append(request.getDeadline()).append("\n");
+        }
+        sb.append("Complexity: ").append(request.getComplexity() != null ? request.getComplexity() : "MEDIUM").append("\n");
+        if (request.getSkillsRequired() != null && !request.getSkillsRequired().isEmpty()) {
+            sb.append("Required skills: ").append(String.join(", ", request.getSkillsRequired())).append("\n");
+        }
+        if (request.getExpectedBudget() != null) {
+            sb.append("Client expected budget: ").append(request.getExpectedBudget()).append(" VND\n");
+        }
+
+        sb.append("""
+            \n## Your Task
+            Analyze this task and return a realistic price estimate in Vietnamese Dong (VND) for the Vietnamese freelance market.
+            
+            Consider:
+            - Complexity level (LOW = simple, MEDIUM = moderate, HIGH = complex/specialized)
+            - Deadline urgency (closer deadline = higher price)
+            - Skill rarity and market demand
+            - Typical Vietnamese freelance rates by category
+            
+            Return a JSON object with:
+            {
+              "minPrice": number (minimum fair price in VND),
+              "recommendedPrice": number (best value price in VND),
+              "maxPrice": number (maximum for premium/expert work in VND),
+              "estimatedHours": number (estimated hours needed),
+              "estimatedDuration": string (e.g. "2-3 ngày", "1 tuần"),
+              "difficultyLevel": string ("Dễ" | "Trung bình" | "Khó" | "Chuyên gia"),
+              "pricingFactors": [list of factors considered],
+              "marketAnalysis": string (brief analysis of market rates for this type of work in Vietnam),
+              "confidence": number (0.0 to 1.0, how confident you are in this estimate)
+            }
+            
+            Important:
+            - All prices must be in VND (no currency symbol needed)
+            - Be realistic for the Vietnamese market — not too cheap, not inflated
+            - For HIGH complexity tasks with rare skills, maxPrice can be 3-5x minPrice
+            - estimatedHours should match complexity and deadline
+            - confidence reflects how much information was provided
+            """);
+
+        return sb.toString();
+    }
+
+    private AiPricingResponse parsePricingResponse(String text, AiPricingRequest request) {
+        try {
+            text = text.trim();
+            if (text.startsWith("```")) {
+                int start = text.indexOf("```") + 3;
+                int end = text.lastIndexOf("```");
+                if (end > start) text = text.substring(start, end).trim();
+                if (text.startsWith("json")) text = text.substring(4).trim();
+            }
+
+            if (text.startsWith("{")) {
+                Map<String, Object> data = objectMapper.readValue(text, new TypeReference<>() {});
+                return AiPricingResponse.builder()
+                        .minPrice(toBigDecimal(data.get("minPrice")))
+                        .recommendedPrice(toBigDecimal(data.get("recommendedPrice")))
+                        .maxPrice(toBigDecimal(data.get("maxPrice")))
+                        .currency("VND")
+                        .estimatedHours(toDouble(data.get("estimatedHours")))
+                        .estimatedDuration((String) data.get("estimatedDuration"))
+                        .difficultyLevel((String) data.get("difficultyLevel"))
+                        .pricingFactors(data.get("pricingFactors") != null
+                                ? new ArrayList<>((List<String>) data.get("pricingFactors"))
+                                : List.of())
+                        .marketAnalysis((String) data.get("marketAnalysis"))
+                        .confidence(toDouble(data.get("confidence")))
+                        .generatedAt(LocalDateTime.now())
+                        .build();
+            }
+        } catch (Exception e) {
+            log.warn("Failed to parse pricing JSON: {}", e.getMessage());
+        }
+        return AiPricingResponse.builder()
+                .recommendedPrice(java.math.BigDecimal.valueOf(500000))
+                .minPrice(java.math.BigDecimal.valueOf(200000))
+                .maxPrice(java.math.BigDecimal.valueOf(1000000))
+                .currency("VND")
+                .estimatedHours(8.0)
+                .estimatedDuration("1-2 ngày")
+                .difficultyLevel("Trung bình")
+                .pricingFactors(List.of("Không đủ thông tin để phân tích chi tiết"))
+                .marketAnalysis("Vui lòng xem phản hồi từ AI: " + text.substring(0, Math.min(200, text.length())))
+                .confidence(0.3)
+                .generatedAt(LocalDateTime.now())
+                .build();
+    }
+
+    private java.math.BigDecimal toBigDecimal(Object value) {
+        if (value == null) return java.math.BigDecimal.ZERO;
+        if (value instanceof java.math.BigDecimal bd) return bd;
+        if (value instanceof Number num) return java.math.BigDecimal.valueOf(num.doubleValue());
+        try { return new java.math.BigDecimal(value.toString()); }
+        catch (Exception e) { return java.math.BigDecimal.ZERO; }
+    }
+
+    private Double toDouble(Object value) {
+        if (value == null) return 0.0;
+        if (value instanceof Number num) return num.doubleValue();
+        try { return Double.parseDouble(value.toString()); }
+        catch (Exception e) { return 0.0; }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // FILE EXTRACTION
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    public AiFileExtractResponse extractFile(AiFileExtractRequest request) {
+        String fileUrl = request.getFileUrl();
+        String fileName = request.getFileName();
+        String fileType = request.getFileType();
+
+        if (fileName == null || fileName.isBlank()) {
+            fileName = extractFileNameFromUrl(fileUrl);
+        }
+        if (fileType == null || fileType.isBlank()) {
+            fileType = extractFileType(fileName, fileUrl);
+        }
+
+        // Download file
+        byte[] fileBytes = downloadFile(fileUrl);
+
+        // Extract text
+        String extractedText = extractText(fileBytes, fileType, fileName);
+
+        // AI analyze
+        String prompt = buildFileExtractPrompt(request, extractedText, fileName, fileType);
+        String aiReply = callGeminiWithBody(prompt, buildFileExtractBody(extractedText, request));
+
+        // Parse AI response
+        AiFileExtractResponse parsed = parseFileExtractResponse(aiReply, extractedText, fileName, fileType, request);
+        String raw = extractedText.length() > 10000 ? extractedText.substring(0, 10000) : extractedText;
+        return AiFileExtractResponse.builder()
+                .fileName(fileName)
+                .fileType(fileType)
+                .purpose(request.getPurpose() != null ? request.getPurpose().name() : "CUSTOM")
+                .textLength(extractedText.length())
+                .rawText(raw)
+                .extractedData(parsed.getExtractedData())
+                .summary(parsed.getSummary())
+                .language(parsed.getLanguage())
+                .qualityScore(parsed.getQualityScore())
+                .extractedAt(LocalDateTime.now())
+                .build();
+    }
+
+    private byte[] downloadFile(String fileUrl) {
+        try {
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create(fileUrl))
+                    .timeout(Duration.ofSeconds(30))
+                    .header("Accept", "*/*")
+                    .GET()
+                    .build();
+            HttpResponse<byte[]> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofByteArray());
+            if (resp.statusCode() >= 400) {
+                throw TaskHubException.badRequest("Cannot download file: HTTP " + resp.statusCode());
+            }
+            return resp.body();
+        } catch (TaskHubException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("File download failed: {}", fileUrl, e);
+            throw TaskHubException.badRequest("Cannot download file: " + e.getMessage());
+        }
+    }
+
+    private String extractText(byte[] bytes, String fileType, String fileName) {
+        String type = (fileType != null ? fileType : "").toLowerCase();
+        String name = (fileName != null ? fileName : "").toLowerCase();
+
+        if (type.endsWith("pdf") || name.endsWith(".pdf")) {
+            return extractPdfText(bytes);
+        }
+        if (type.contains("document") || type.contains("docx") || name.endsWith(".docx") || name.endsWith(".doc")) {
+            return extractDocxText(bytes);
+        }
+        if (type.contains("text") || type.contains("plain") || name.endsWith(".txt")) {
+            return new String(bytes, StandardCharsets.UTF_8);
+        }
+        if (type.contains("image") || name.matches(".*\\.(jpg|jpeg|png|gif|webp|bmp)")) {
+            return "[IMAGE FILE - AI will analyze directly from URL]";
+        }
+
+        // Default: try PDF then DOCX
+        try { return extractPdfText(bytes); } catch (Exception e) {
+            try { return extractDocxText(bytes); } catch (Exception ex) {
+                return new String(bytes, StandardCharsets.UTF_8);
+            }
+        }
+    }
+
+    private String extractPdfText(byte[] bytes) {
+        try (PDDocument doc = Loader.loadPDF(bytes)) {
+            PDFTextStripper stripper = new PDFTextStripper();
+            String text = stripper.getText(doc);
+            return text.trim();
+        } catch (Exception e) {
+            log.warn("PDF extraction failed: {}", e.getMessage());
+            return "[PDF extraction failed: " + e.getMessage() + "]";
+        }
+    }
+
+    private String extractDocxText(byte[] bytes) {
+        try (XWPFDocument doc = new XWPFDocument(new java.io.ByteArrayInputStream(bytes))) {
+            StringBuilder sb = new StringBuilder();
+            for (XWPFParagraph p : doc.getParagraphs()) {
+                String text = p.getText();
+                if (text != null && !text.isBlank()) {
+                    sb.append(text).append("\n");
+                }
+            }
+            return sb.toString().trim();
+        } catch (Exception e) {
+            log.warn("DOCX extraction failed: {}", e.getMessage());
+            return "[DOCX extraction failed: " + e.getMessage() + "]";
+        }
+    }
+
+    private String extractFileNameFromUrl(String url) {
+        if (url == null || url.isBlank()) return "unknown";
+        int lastSlash = url.lastIndexOf('/');
+        int lastQuest = url.lastIndexOf('?');
+        if (lastSlash < 0) return "unknown";
+        String name = url.substring(lastSlash + 1);
+        if (lastQuest > lastSlash) name = name.substring(0, lastQuest - lastSlash - 1);
+        return name;
+    }
+
+    private String extractFileType(String fileName, String fileUrl) {
+        if (fileName != null && fileName.contains(".")) {
+            return fileName.substring(fileName.lastIndexOf('.') + 1).toLowerCase();
+        }
+        if (fileUrl != null && fileUrl.contains(".")) {
+            int q = fileUrl.indexOf('?');
+            String path = q > 0 ? fileUrl.substring(0, q) : fileUrl;
+            return path.substring(path.lastIndexOf('.') + 1).toLowerCase();
+        }
+        return "unknown";
+    }
+
+    private Map<String, Object> buildFileExtractBody(String extractedText, AiFileExtractRequest request) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("contents", List.of(Map.of("parts", List.of(Map.of("text", extractedText)))));
+        body.put("generationConfig", Map.of("temperature", 0.3, "topP", 0.8, "maxOutputTokens", 4096));
+        return body;
+    }
+
+    private String buildFileExtractPrompt(AiFileExtractRequest request, String extractedText, String fileName, String fileType) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("You are an expert at analyzing documents and extracting structured information.\n\n");
+        sb.append("File: ").append(fileName).append("\n");
+        sb.append("Type: ").append(fileType).append("\n");
+        sb.append("Purpose: ").append(request.getPurpose() != null ? request.getPurpose().name() : "CUSTOM").append("\n");
+
+        if (request.getContext() != null && !request.getContext().isBlank()) {
+            sb.append("Context: ").append(request.getContext()).append("\n");
+        }
+
+        sb.append("\nExtracted text from file:\n").append(extractedText).append("\n\n");
+
+        String purpose = request.getPurpose() != null ? request.getPurpose().name() : "CUSTOM";
+
+        sb.append("""
+                Based on the purpose "%s", extract and structure the relevant information.
+                Return a JSON object with:
+                """.formatted(purpose));
+
+        if ("RESUME".equals(purpose)) {
+            sb.append("""
+                {
+                  "fullName": string,
+                  "email": string,
+                  "phone": string,
+                  "skills": [list of skills],
+                  "education": string,
+                  "experience": string,
+                  "certifications": [list],
+                  "summary": brief professional summary,
+                  "language": detected language code
+                }
+                """);
+        } else if ("BRIEF".equals(purpose)) {
+            sb.append("""
+                {
+                  "projectTitle": string,
+                  "objectives": [list of main objectives],
+                  "requirements": [list of requirements],
+                  "deliverables": [list of expected deliverables],
+                  "constraints": [any constraints or limitations],
+                  "targetAudience": string,
+                  "summary": brief summary of the brief,
+                  "language": detected language code
+                }
+                """);
+        } else if ("SUBMISSION".equals(purpose)) {
+            sb.append("""
+                {
+                  "documentType": string (e.g. report, code, design),
+                  "mainSections": [list of sections],
+                  "keyContent": string (main content summary),
+                  "completeness": "complete" | "partial" | "incomplete",
+                  "qualityNotes": string,
+                  "summary": brief summary of the submission,
+                  "language": detected language code
+                }
+                """);
+        } else {
+            sb.append("""
+                {
+                  "summary": brief summary of the document,
+                  "keyPoints": [list of key points],
+                  "documentType": string (detected type),
+                  "language": detected language code,
+                  "completeness": "complete" | "partial" | "incomplete",
+                  "qualityScore": "high" | "medium" | "low",
+                  "extractedData": { any other structured data you can extract }
+                }
+                """);
+        }
+
+        sb.append("\nRespond in Vietnamese where possible. Return ONLY the JSON object.\n");
+        return sb.toString();
+    }
+
+    private AiFileExtractResponse parseFileExtractResponse(String aiReply, String extractedText, String fileName, String fileType, AiFileExtractRequest request) {
+        try {
+            String text = aiReply.trim();
+            if (text.startsWith("```")) {
+                int start = text.indexOf("```") + 3;
+                int end = text.lastIndexOf("```");
+                if (end > start) text = text.substring(start, text.indexOf("\n", start)).trim();
+                if (text.startsWith("json")) text = text.substring(4).trim();
+            }
+
+            if (text.startsWith("{")) {
+                Map<String, Object> data = objectMapper.readValue(text, new TypeReference<>() {});
+                return AiFileExtractResponse.builder()
+                        .extractedData(data)
+                        .summary((String) data.get("summary"))
+                        .language((String) data.get("language"))
+                        .qualityScore((String) data.getOrDefault("qualityScore", "medium"))
+                        .build();
+            }
+        } catch (Exception e) {
+            log.warn("Failed to parse file extract AI response: {}", e.getMessage());
+        }
+        return AiFileExtractResponse.builder()
+                .extractedData(Map.of("rawReply", aiReply))
+                .summary("Xem phản hồi AI: " + aiReply.substring(0, Math.min(200, aiReply.length())))
+                .language("unknown")
+                .qualityScore("medium")
+                .build();
     }
 
     // ── Response Parsers ───────────────────────────────────────────────────────

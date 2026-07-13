@@ -31,6 +31,15 @@ public class AiChatSession {
     @Column(columnDefinition = "TEXT")
     private String contextSummary; // JSON snapshot of relevant task/submission context
 
+    @Column(columnDefinition = "TEXT")
+    private String userProfileJson; // JSON snapshot of user profile at session start
+
+    @Column(nullable = false, columnDefinition = "INT DEFAULT 0")
+    @Builder.Default
+    private Integer messageCount = 0;
+
+    private LocalDateTime lastActiveAt;
+
     @CreationTimestamp
     private LocalDateTime createdAt;
 }

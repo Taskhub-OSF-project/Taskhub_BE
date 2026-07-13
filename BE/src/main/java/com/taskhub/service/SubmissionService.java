@@ -13,6 +13,7 @@ import com.taskhub.dto.response.RevisionSuggestionResponse;
 import com.taskhub.dto.response.SubmissionAIResult;
 import com.taskhub.dto.response.SubmissionResponse;
 import com.taskhub.entity.AcceptanceCriteria;
+import com.taskhub.entity.EvaluationRecord;
 import com.taskhub.entity.Submission;
 import com.taskhub.entity.Task;
 import com.taskhub.entity.User;
@@ -20,12 +21,14 @@ import com.taskhub.enums.CriteriaStatus;
 import com.taskhub.enums.Role;
 import com.taskhub.enums.TaskStatus;
 import com.taskhub.exception.TaskHubException;
+import com.taskhub.repository.EvaluationRecordRepository;
 import com.taskhub.repository.RevisionRequestRepository;
 import com.taskhub.repository.SubmissionRepository;
 import com.taskhub.repository.TaskRepository;
 import com.taskhub.security.AuthUtil;
 import com.taskhub.util.FileUploadValidator;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,11 +39,13 @@ import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class SubmissionService {
     private final SubmissionRepository submissionRepo;
     private final RevisionRequestRepository revisionRequestRepo;
     private final TaskRepository taskRepo;
     private final AiValidationService aiValidation;
+    private final EvaluationRecordRepository evaluationRecordRepository;
     private final TaskService taskService;
     private final EscrowService escrowService;
     private final NotificationService notificationService;
@@ -213,6 +218,31 @@ public class SubmissionService {
             throw TaskHubException.badRequest("Task is not SUBMITTED");
         }
 
+        // Lấy submission mới nhất
+        List<Submission> submissions = submissionRepo.findByTaskId(taskId);
+        if (!submissions.isEmpty()) {
+            Submission latest = submissions.stream()
+                    .max(Comparator.comparing(Submission::getSubmittedAt))
+                    .orElse(submissions.get(0));
+
+            // Nếu chưa đánh giá AI → chỉ cập nhật status
+            // Nếu đã có evaluation → lấy finalScore/finalStars để hiển thị
+            if (latest.getFinalScore() == null) {
+                // Khuyến nghị Hirer chạy AI evaluation trước khi approve
+                log.info("Approving submission {} without AI evaluation", latest.getId());
+            } else {
+                log.info("Approving submission {} with AI score: {}, stars: {}",
+                        latest.getId(), latest.getFinalScore(), latest.getFinalStars());
+            }
+
+            // Cập nhật evaluation timestamp nếu chưa có
+            if (latest.getEvaluatedAt() == null) {
+                latest.setEvaluatedAt(java.time.LocalDateTime.now());
+                latest.setEvaluatedByHirerId(hirer.getId());
+                submissionRepo.save(latest);
+            }
+        }
+
         task.getAcceptanceCriteria().forEach(c -> c.setStatus(CriteriaStatus.PASSED));
         taskService.transition(task, TaskStatus.COMPLETED);
         taskRepo.save(task);
@@ -318,6 +348,12 @@ public class SubmissionService {
                 .notes(s.getNotes())
                 .aiScore(s.getAiScore())
                 .aiReport(s.getAiReport())
+                .finalScore(s.getFinalScore())
+                .finalStars(s.getFinalStars())
+                .finalRating(s.getFinalRating())
+                .finalAssessment(s.getFinalAssessment())
+                .hirerOverridden(s.getHirerOverridden())
+                .evaluatedAt(s.getEvaluatedAt())
                 .isRevision(s.getIsRevision())
                 .submittedAt(s.getSubmittedAt())
                 .build();

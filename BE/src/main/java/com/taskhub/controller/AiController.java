@@ -31,6 +31,12 @@ public class AiController {
         return ResponseEntity.ok(aiService.suggestCriteria(request));
     }
 
+    @PostMapping("/criteria/from-job")
+    public ResponseEntity<AiCriteriaResponse> suggestCriteriaFromJob(
+            @Valid @RequestBody AiCriteriaFromJobRequest request) {
+        return ResponseEntity.ok(aiService.suggestCriteriaFromJob(request));
+    }
+
     @PostMapping("/evaluate")
     public ResponseEntity<AiEvaluationResponse> evaluateSubmission(
             @Valid @RequestBody AiEvaluationRequest request) {
@@ -57,5 +63,29 @@ public class AiController {
     @GetMapping("/chat/sessions")
     public ResponseEntity<List<Map<String, Object>>> getUserSessions() {
         return ResponseEntity.ok(aiService.getUserSessions(AuthUtil.getCurrentUser().getId().toString()));
+    }
+
+    // ── Task Pricing ────────────────────────────────────────────────────────────
+
+    @PostMapping("/task/price")
+    public ResponseEntity<AiPricingResponse> estimateTaskPrice(
+            @Valid @RequestBody AiPricingRequest request) {
+        return ResponseEntity.ok(aiService.estimateTaskPrice(request));
+    }
+
+    // ── Task Auto-Generation ───────────────────────────────────────────────────
+
+    @PostMapping("/task/generate")
+    public ResponseEntity<AiGenerateTaskResponse> generateTask(
+            @Valid @RequestBody AiGenerateTaskRequest request) {
+        return ResponseEntity.ok(aiService.generateTask(request));
+    }
+
+    // ── File Extraction ─────────────────────────────────────────────────────────
+
+    @PostMapping("/file/extract")
+    public ResponseEntity<AiFileExtractResponse> extractFile(
+            @Valid @RequestBody AiFileExtractRequest request) {
+        return ResponseEntity.ok(aiService.extractFile(request));
     }
 }

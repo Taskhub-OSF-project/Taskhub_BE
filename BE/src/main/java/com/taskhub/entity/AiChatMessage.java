@@ -37,6 +37,9 @@ public class AiChatMessage {
 
     private String attachmentType; // pdf, docx, image, etc.
 
+    @Column(columnDefinition = "TEXT")
+    private String metadataJson; // JSON for extracted data, ratings, etc.
+
     @CreationTimestamp
     private LocalDateTime createdAt;
 }

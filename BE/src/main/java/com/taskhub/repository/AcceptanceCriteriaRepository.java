@@ -6,4 +6,5 @@ import java.util.List;
 
 public interface AcceptanceCriteriaRepository extends JpaRepository<AcceptanceCriteria, Long> {
     List<AcceptanceCriteria> findByTaskId(Long taskId);
+    List<AcceptanceCriteria> findByTaskIdOrderByIdAsc(Long taskId);
 }

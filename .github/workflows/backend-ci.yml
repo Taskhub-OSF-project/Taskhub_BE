@@ -57,6 +57,6 @@ jobs:
             sleep 2
           done
 
- 
+
       - name: Build JAR
         run: mvn -B -DskipTests package

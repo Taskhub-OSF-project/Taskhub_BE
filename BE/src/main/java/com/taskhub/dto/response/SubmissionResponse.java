@@ -16,6 +16,15 @@ public class SubmissionResponse {
     private String notes;
     private Integer aiScore;
     private String aiReport;
+
+    /** Evaluation fields */
+    private Double finalScore;
+    private Integer finalStars;
+    private String finalRating;
+    private String finalAssessment;
+    private Boolean hirerOverridden;
+    private LocalDateTime evaluatedAt;
+
     private Boolean isRevision;
     private LocalDateTime submittedAt;
 }

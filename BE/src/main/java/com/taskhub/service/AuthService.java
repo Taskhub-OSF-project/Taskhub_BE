@@ -82,15 +82,27 @@ public class AuthService {
 
     @Transactional
     public AuthResponse login(LoginRequest req) {
+        // Validate email format
+        if (req.getEmail() == null || req.getEmail().isBlank()) {
+            auditService.record("LOGIN_FAILURE", req.getEmail(), "Email is blank");
+            throw TaskHubException.badRequest("Vui lòng nhập địa chỉ email");
+        }
+
+        // Validate password
+        if (req.getPassword() == null || req.getPassword().isBlank()) {
+            auditService.record("LOGIN_FAILURE", req.getEmail(), "Password is blank");
+            throw TaskHubException.badRequest("Vui lòng nhập mật khẩu");
+        }
+
         User user = userRepository.findByEmail(req.getEmail())
                 .orElseThrow(() -> {
                     auditService.record("LOGIN_FAILURE", req.getEmail(), "Email not found");
-                    return TaskHubException.badRequest("Invalid credentials");
+                    return TaskHubException.badRequest("Email hoặc mật khẩu không đúng");
                 });
 
         if (!passwordEncoder.matches(req.getPassword(), user.getPassword())) {
             auditService.record("LOGIN_FAILURE", user.getEmail(), "Invalid password");
-            throw TaskHubException.badRequest("Invalid credentials");
+            throw TaskHubException.badRequest("Email hoặc mật khẩu không đúng");
         }
 
         auditService.record("LOGIN_SUCCESS", user.getEmail(), "User logged in");

@@ -1,8 +1,11 @@
 package com.taskhub.controller;
 
+import com.taskhub.dto.request.EvaluationOverrideRequest;
+import com.taskhub.dto.request.EvaluationRequest;
 import com.taskhub.dto.request.RevisionRequest;
 import com.taskhub.dto.request.SubmissionRequest;
 import com.taskhub.dto.response.*;
+import com.taskhub.service.EvaluationService;
 import com.taskhub.service.SubmissionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +19,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SubmissionController {
     private final SubmissionService submissionService;
+    private final EvaluationService evaluationService;
 
     @PostMapping("/task/{taskId}")
     @PreAuthorize("hasRole('STUDENT')")
@@ -63,5 +67,45 @@ public class SubmissionController {
     @PreAuthorize("hasAnyRole('HIRER', 'STUDENT')")
     public ResponseEntity<ApiResponse<String>> disputeReport(@PathVariable Long taskId) {
         return ResponseEntity.ok(ApiResponse.ok(submissionService.generateDisputeReport(taskId)));
+    }
+
+    // ── Evaluation ────────────────────────────────────────────────────────────────
+
+    /**
+     * AI phân tích & đối chiếu submission với criteria.
+     * Trả kết quả từng tiêu chí + điểm tổng + sao.
+     */
+    @PostMapping("/{submissionId}/evaluate")
+    @PreAuthorize("hasRole('HIRER')")
+    public ResponseEntity<ApiResponse<EvaluationResponse>> evaluate(
+            @PathVariable Long submissionId,
+            @Valid @RequestBody EvaluationRequest req) {
+        req.setSubmissionId(submissionId);
+        return ResponseEntity.ok(ApiResponse.ok("AI evaluation completed", evaluationService.evaluateSubmission(req)));
+    }
+
+    /**
+     * Lấy kết quả đánh giá hiện tại.
+     */
+    @GetMapping("/{submissionId}/evaluate")
+    @PreAuthorize("hasAnyRole('HIRER', 'STUDENT')")
+    public ResponseEntity<ApiResponse<EvaluationResponse>> getEvaluation(@PathVariable Long submissionId) {
+        EvaluationResponse result = evaluationService.getEvaluation(submissionId);
+        if (result == null) {
+            return ResponseEntity.ok(ApiResponse.ok("No evaluation found", null));
+        }
+        return ResponseEntity.ok(ApiResponse.ok("Evaluation retrieved", result));
+    }
+
+    /**
+     * Hirer xác nhận hoặc override kết quả AI.
+     */
+    @PatchMapping("/{submissionId}/evaluate")
+    @PreAuthorize("hasRole('HIRER')")
+    public ResponseEntity<ApiResponse<EvaluationResponse>> overrideEvaluation(
+            @PathVariable Long submissionId,
+            @Valid @RequestBody EvaluationOverrideRequest req) {
+        req.setSubmissionId(submissionId);
+        return ResponseEntity.ok(ApiResponse.ok("Evaluation updated", evaluationService.overrideEvaluation(req)));
     }
 }
