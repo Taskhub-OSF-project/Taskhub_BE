@@ -4,6 +4,9 @@ import com.taskhub.dto.PageRequestDto;
 import com.taskhub.dto.PageResponse;
 import com.taskhub.dto.request.BroadcastNotificationRequest;
 import com.taskhub.dto.request.DisputeResolveRequest;
+import com.taskhub.dto.request.TaskRemovalResolveDto;
+import com.taskhub.dto.response.RemovalAIReport;
+import com.taskhub.dto.response.TaskRemovalResponse;
 import com.taskhub.dto.response.AdminDashboardResponse;
 import com.taskhub.dto.response.ApiResponse;
 import com.taskhub.dto.response.DisputeResolveResponse;
@@ -12,6 +15,7 @@ import com.taskhub.dto.response.UserProfileResponse;
 import com.taskhub.enums.Role;
 import com.taskhub.service.DisputeService;
 import com.taskhub.service.NotificationService;
+import com.taskhub.service.TaskRemovalService;
 import com.taskhub.service.TaskService;
 import com.taskhub.service.UserService;
 import jakarta.validation.Valid;
@@ -31,6 +35,7 @@ public class AdminController {
     private final TaskService taskService;
     private final DisputeService disputeService;
     private final NotificationService notificationService;
+    private final TaskRemovalService taskRemovalService;
 
     @GetMapping("/dashboard")
     public ResponseEntity<ApiResponse<AdminDashboardResponse>> getDashboard() {
@@ -114,5 +119,27 @@ public class AdminController {
         return ResponseEntity.ok(ApiResponse.ok("Broadcast sent",
                 Map.of("recipients", sent,
                         "targetRole", req.getTargetRole() == null ? "ALL" : req.getTargetRole())));
+    }
+
+    @GetMapping("/removal-requests")
+    public ResponseEntity<ApiResponse<PageResponse<TaskRemovalResponse>>> getRemovalRequests(
+            @RequestParam(required = false) String status,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        PageRequestDto pageReq = PageRequestDto.builder().page(page).size(size).sortBy("createdAt").sortDir("desc").build();
+        if (status != null && !status.isBlank()) {
+            return ResponseEntity.ok(ApiResponse.ok("Removal requests retrieved",
+                    taskRemovalService.getAllRemovalRequests(pageReq)));
+        }
+        return ResponseEntity.ok(ApiResponse.ok("Pending removal requests retrieved",
+                taskRemovalService.getPendingRemovalRequests(pageReq)));
+    }
+
+    @PostMapping("/removal-requests/{id}/resolve")
+    public ResponseEntity<ApiResponse<TaskRemovalResponse>> resolveRemovalRequest(
+            @PathVariable Long id,
+            @Valid @RequestBody TaskRemovalResolveDto req) {
+        return ResponseEntity.ok(ApiResponse.ok("Removal request resolved",
+                taskRemovalService.resolveRemovalRequest(id, req)));
     }
 }

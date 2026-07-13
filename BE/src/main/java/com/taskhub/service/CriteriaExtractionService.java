@@ -33,7 +33,8 @@ import java.util.Locale;
 public class CriteriaExtractionService {
 
     private static final long MAX_BYTES = 15 * 1024 * 1024;
-    private static final int MAX_TEXT_PREVIEW = 4000;
+    private static final int MAX_TEXT_PREVIEW = 8000;
+    private static final int MAX_CHARS_PER_PAGE = 2000;
     private final GeminiAiService geminiAiService;
 
     public CriteriaExtractionService(GeminiAiService geminiAiService) {
@@ -101,12 +102,28 @@ public class CriteriaExtractionService {
         try (PDDocument doc = Loader.loadPDF(file.getBytes())) {
             PDFTextStripper stripper = new PDFTextStripper();
             stripper.setSortByPosition(true);
-            String text = stripper.getText(doc);
-            return new FileContent(file.getSize(), preview(text), doc.getNumberOfPages() + " pages, "
-                    + text.length() + " chars");
+
+            StringBuilder allText = new StringBuilder();
+            int pageCount = doc.getNumberOfPages();
+
+            // Read up to 10 pages or 8000 chars total
+            int maxPages = Math.min(pageCount, 10);
+            int startPage = 1;
+
+            for (int page = startPage; page <= maxPages && allText.length() < MAX_TEXT_PREVIEW; page++) {
+                stripper.setStartPage(page);
+                stripper.setEndPage(page);
+                String pageText = stripper.getText(doc);
+                allText.append("--- Trang ").append(page).append(" ---\n");
+                allText.append(pageText).append("\n");
+            }
+
+            String text = allText.toString();
+            String summary = pageCount + " trang, đã đọc " + maxPages + " trang, " + text.length() + " ký tự";
+            return new FileContent(file.getSize(), preview(text), summary);
         } catch (Exception e) {
             log.warn("PDF read failed ({}): {}", file.getOriginalFilename(), e.getMessage());
-            return new FileContent(file.getSize(), null, "pdf-read-failed");
+            return new FileContent(file.getSize(), null, "pdf-read-failed: " + e.getMessage());
         }
     }
 
@@ -141,47 +158,74 @@ public class CriteriaExtractionService {
     private String buildContext(String fileName, String type, FileContent content,
                                 String taskDescription, String extraRequirements) {
         StringBuilder sb = new StringBuilder();
-        sb.append("File: ").append(fileName).append(" (").append(type).append(", ")
-                .append(content.summary).append(")\n\n");
 
+        // File metadata
+        sb.append("=== THÔNG TIN FILE ===\n");
+        sb.append("Tên file: ").append(fileName).append("\n");
+        sb.append("Loại file: ").append(type).append("\n");
+        sb.append("Kích thước: ").append(content.size).append(" bytes\n");
+        sb.append("Thông tin: ").append(content.summary).append("\n\n");
+
+        // User-provided description
         if (taskDescription != null && !taskDescription.isBlank()) {
-            sb.append("## Mô tả công việc do người dùng cung cấp:\n")
+            sb.append("=== MÔ TẢ CÔNG VIỆC (do người dùng cung cấp) ===\n")
                     .append(taskDescription.trim()).append("\n\n");
         }
+
+        // Extra requirements
         if (extraRequirements != null && !extraRequirements.isBlank()) {
-            sb.append("## Yêu cầu bổ sung:\n").append(extraRequirements.trim()).append("\n\n");
+            sb.append("=== YÊU CẦU BỔ SUNG (do người dùng cung cấp) ===\n")
+                    .append(extraRequirements.trim()).append("\n\n");
         }
+
+        // File content
         if (content.preview != null && !content.preview.isBlank()) {
-            sb.append("## Nội dung trích từ file (tối đa 4000 ký tự đầu):\n")
+            sb.append("=== NỘI DUNG FILE (trích xuất tự động) ===\n")
                     .append(content.preview).append("\n");
+        } else {
+            sb.append("=== NỘI DUNG FILE ===\n[Không đọc được nội dung file - chỉ có metadata]\n");
         }
+
         return sb.toString();
     }
 
     // ── Gemini attempt ────────────────────────────────────────────────────────
 
     private CriteriaExtractResponse tryGemini(String fileName, String type, String combinedContext) {
+        // Check if context has actual file content
+        boolean hasContent = combinedContext.contains("=== NỘI DUNG FILE")
+                && !combinedContext.contains("[Không đọc được nội dung file");
+
+        if (!hasContent) {
+            log.info("No readable file content, using heuristic fallback for {}", fileName);
+            return null;
+        }
+
         try {
             com.taskhub.dto.response.AiCriteriaResponse resp = geminiAiService
                     .suggestCriteriaFromBrief(combinedContext, type, fileName);
             if (resp == null || resp.getSuggestions() == null || resp.getSuggestions().isEmpty()) {
+                log.warn("Gemini returned empty suggestions for {}", fileName);
                 return null;
             }
             List<ExtractedCriterion> out = new ArrayList<>();
             for (com.taskhub.dto.response.AiCriteriaResponse.CriteriaSuggestion s : resp.getSuggestions()) {
                 String rationale = s.getEvaluationGuide() != null ? s.getEvaluationGuide() : "AI suggestion";
+                String criterionText = buildCriterionText(s);
                 out.add(ExtractedCriterion.builder()
-                        .text(buildCriterionText(s))
+                        .text(criterionText)
                         .rationale(rationale)
                         .build());
             }
+            log.info("Gemini extracted {} criteria from {}", out.size(), fileName);
             return CriteriaExtractResponse.builder()
                     .fileName(fileName)
                     .detectedType(type)
                     .suggestions(out)
                     .build();
         } catch (Exception e) {
-            log.warn("Gemini criteria extraction failed, falling back to heuristic: {}", e.getMessage());
+            log.warn("Gemini criteria extraction failed for {}, falling back to heuristic: {}",
+                    fileName, e.getMessage());
             return null;
         }
     }

@@ -62,7 +62,7 @@ public class GeminiAiService {
 
         String prompt = buildProgressPrompt(task, submissions, request.getUserRole());
 
-        String reply = callGemini(prompt);
+        String reply = callAi(prompt);
         return AiProgressResponse.builder()
                 .taskId(task.getId())
                 .taskTitle(task.getTitle())
@@ -83,7 +83,7 @@ public class GeminiAiService {
                 : null;
 
         String prompt = buildCriteriaPrompt(task, request);
-        String reply = callGemini(prompt);
+        String reply = callAi(prompt);
 
         List<AiCriteriaResponse.CriteriaSuggestion> suggestions = parseCriteriaSuggestions(reply, request.getNumSuggestions());
 
@@ -115,7 +115,7 @@ public class GeminiAiService {
 
     public AiCriteriaResponse suggestCriteriaFromJob(AiCriteriaFromJobRequest request) {
         String prompt = buildCriteriaFromJobPrompt(request);
-        String reply = callGemini(prompt);
+        String reply = callAi(prompt);
         int num = request.getNumSuggestions() != null ? request.getNumSuggestions() : 5;
         List<AiCriteriaResponse.CriteriaSuggestion> suggestions = parseCriteriaSuggestions(reply, num);
 
@@ -181,7 +181,7 @@ public class GeminiAiService {
 
     public AiGenerateTaskResponse generateTask(AiGenerateTaskRequest request) {
         String prompt = buildGenerateTaskPrompt(request);
-        String reply = callGemini(prompt);
+        String reply = callAi(prompt);
         AiGenerateTaskResponse response = parseGenerateTaskResponse(reply);
         return AiGenerateTaskResponse.builder()
                 .rawAiContent(reply)
@@ -334,7 +334,7 @@ public class GeminiAiService {
                     org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE);
         }
         String prompt = buildBriefCriteriaPrompt(combinedContext, fileType, fileName);
-        String reply = callGemini(prompt);
+        String reply = callAi(prompt);
         int num = 5;
         List<AiCriteriaResponse.CriteriaSuggestion> suggestions = parseCriteriaSuggestions(reply, num);
         return AiCriteriaResponse.builder()
@@ -346,48 +346,79 @@ public class GeminiAiService {
 
     private String buildBriefCriteriaPrompt(String context, String fileType, String fileName) {
         return """
-                Bạn là chuyên gia thiết kế tiêu chí nghiệm thu cho công việc freelance.
+                Bạn là chuyên gia phân tích yêu cầu và thiết kế tiêu chí nghiệm thu cho công việc trên TaskHub.
 
-                ## File đã upload: %s (%s)
-                Tên file: %s
+                ## Thông tin file
+                - Tên file: %s
+                - Loại file: %s
 
                 ## Nội dung trích từ file / brief:
                 %s
 
                 ## Nhiệm vụ
-                Phân tích nội dung brief phía trên và trích xuất tối đa 5 tiêu chí nghiệm thu CỤ THỂ và ĐO LƯỜNG ĐƯỢC.
+                Phân tích KỸ nội dung brief trên và trích xuất tối đa 6 tiêu chí nghiệm thu CỤ THỂ và ĐO LƯỜNG ĐƯỢC.
 
-                ## Tiêu chuẩn bắt buộc cho mỗi tiêu chí:
+                ## QUY TẮC PHÂN TÍCH
 
-                1. **name**: Tên ngắn gọn, là cụm danh từ mô tả deliverable cụ thể (ví dụ: "Bài viết SEO 1500 từ", "Logo vector SVG", "Dashboard React")
+                **BƯỚC 1: XÁC ĐỊNH LOẠI CÔNG VIỆC**
+                - Nếu là bài lab/assignment: Tập trung vào tính năng, code, test cases
+                - Nếu là thiết kế (design): Tập trung vào deliverable, format, specifications
+                - Nếu là viết content: Tập trung vào nội dung, format, yêu cầu về bài viết
+                - Nếu là bài tập lớn: Tìm các requirements cụ thể và chuyển thành tiêu chí
 
-                2. **description**: PHẢI bao gồm TỐI THIỂU 3 trong các thông tin sau:
-                   - Số lượng/chữ lượng cụ thể (ví dụ: "1500-2000 từ", "tối thiểu 5 section")
-                   - Định dạng file yêu cầu (PDF, DOCX, PNG, SVG, v.v.)
-                   - Kích thước/độ phân giải (ví dụ: 1920x1080px, A4)
-                   - Deadline/ngày giao (nếu có trong brief)
-                   - Yêu cầu kỹ thuật cụ thể (font chữ, màu sắc, framework)
-                   - Tiêu chuẩn chất lượng (% hoàn thành, tỷ lệ đạt yêu cầu)
-                   - Ràng buộc bắt buộc (không watermark, không Plagiarism)
+                **BƯỚC 2: TRÍCH XUẤT YÊU CẦU CỤ THỂ**
+                Đọc kỹ brief và tìm:
+                - Số lượng cụ thể (VD: "3 màn hình", "10 test cases", "5 API endpoints")
+                - Tính năng bắt buộc (VD: "phải có login", "phải parse JSON")
+                - Cấu trúc bắt buộc (VD: "phải có 3 files: model, view, controller")
+                - Test cases được liệt kê
+                - Deadline/dates cụ thể
+                - Framework/công nghệ yêu cầu
+                - Output format bắt buộc
 
-                3. **maxScore**: Điểm tối đa (10-20, tùy mức quan trọng của tiêu chí)
+                **BƯỚC 3: TẠO TIÊU CHÍ**
+                MỖI tiêu chí PHẢI:
+                - Đo lường được (có thể check đạt/không đạt)
+                - Liên quan trực tiếp đến brief
+                - Không trùng lặp với tiêu chí khác
+                - Bao gồm số cụ thể nếu brief có
 
-                4. **evaluationGuide**: CÁCH CHẤM ĐIỂM CỤ THỂ:
-                   - Liệt kê các mốc điểm (0%, 50%, 80%, 100%)
-                   - Mô tả rõ điều kiện đạt mỗi mốc
-                   - VD: "0 điểm: không có file; 5 điểm: có file nhưng thiếu nội dung; 8 điểm: đủ nội dung nhưng chưa đúng format; 10 điểm: đầy đủ và đúng yêu cầu"
+                ## CẤU TRÚC TIÊU CHÍ
 
-                ## QUAN TRỌNG:
-                - Nếu brief đề cập số lượng cụ thể (ví dụ: "3 banner", "10 trang"), phải dùng CON SỐ ĐÓ trong criteria
-                - Nếu brief đề cập chất lượng (ví dụ: "chuyên nghiệp", "sạch sẽ"), phải định nghĩa rõ "chuyên nghiệp/sạch sẽ" = những tiêu chí nào
-                - Nếu brief KHÔNG có thông tin cụ thể, hãy dùng tiêu chí mặc định HỢP LÝ cho loại file %s và ghi rõ trong evaluationGuide
+                **name**: Tên ngắn gọn, mô tả KHÍA CẠNH CỤ THỂ cần đánh giá
 
-                ## Output Format
+                **description**: PHẢI bao gồm:
+                - Số lượng/chất lượng cụ thể từ brief
+                - Tính năng/feature cụ thể
+                - Định dạng yêu cầu (nếu có)
+                - Framework/công nghệ (nếu brief yêu cầu)
+
+                **maxScore**: 10-20 (tùy mức quan trọng)
+
+                **evaluationGuide**: CÁCH CHẤM ĐIỂM CỤ THỂ:
+                - 0 điểm: Không có / không làm
+                - X điểm: Có nhưng thiếu Y
+                - Y điểm: Đầy đủ theo yêu cầu
+                (Mỗi mốc phải nêu RÕ điều kiện)
+
+                ## VÍ DỤ CHO TỪNG LOẠI
+
+                **Bài Lab Flutter:**
+                - "Hoàn thành 3 màn hình: Home, AI Chat, Cart theo cấu trúc thư mục quy định"
+                - "ApiClient gọi đúng 2 endpoints: GET /fruits và POST /ai/fruit-chat"
+                - "Xử lý đúng 6 test cases được liệt kê trong brief"
+                - "Model Fruit và ChatMessage parse JSON đúng format"
+
+                **Design Brief:**
+                - "File vector SVG logo, kích thước 512x512px, transparent background"
+                - "Bộ 5 banner quảng cáo, kích thước 1920x600px, format PNG"
+
+                ## OUTPUT
                 Trả về JSON array với cấu trúc:
-                [{"name": "...", "description": "... (CHI TIẾT, có số)", "maxScore": 10, "evaluationGuide": "..."}]
+                [{"name": "...", "description": "... (CHI TIẾT, có SỐ cụ thể)", "maxScore": 10, "evaluationGuide": "..."}]
 
-                KHÔNG trả về text giải thích, chỉ trả về JSON array.
-                """.formatted(fileType, fileName, fileName, context, fileType);
+                CHỈ trả về JSON array. KHÔNG trùng lặp. MỖI tiêu chí phải kiểm tra MỘT khía cạạnh KHÁC nhau.
+                """.formatted(fileName, fileType, context);
     }
 
     // ── File Evaluation ────────────────────────────────────────────────────────
@@ -422,7 +453,7 @@ public class GeminiAiService {
 
         String prompt = buildDisputePrompt(task, submission, request);
 
-        String reply = callGemini(prompt);
+        String reply = callAi(prompt);
         return parseDisputeResponse(reply, task.getId(), submission.getId());
     }
 
@@ -449,7 +480,7 @@ public class GeminiAiService {
         List<AiChatMessage> history = messageRepository.findBySessionIdOrderByCreatedAtAsc(session.getId());
         String contextPrompt = buildChatContext(history, request);
 
-        String reply = callGemini(contextPrompt);
+        String reply = callAi(contextPrompt);
 
         AiChatMessage aiMsg = AiChatMessage.builder()
                 .sessionId(session.getId())
@@ -471,6 +502,44 @@ public class GeminiAiService {
                 .responseType("TEXT")
                 .timestamp(aiMsg.getCreatedAt())
                 .build();
+    }
+
+    /**
+     * Public chat for non-authenticated users (landing page).
+     * Simple Q&A about TaskHub - no session storage.
+     */
+    public String publicChat(String message) {
+        String prompt = """
+                Bạn là trợ lý ảo của nền tảng TaskHub - sàn việc làm ngắn hạn cho sinh viên Việt Nam.
+
+                ## Về TaskHub:
+                - Sàn việc làm ngắn hạn dành cho sinh viên Việt Nam
+                - Tiêu chí nghiệm thu rõ ràng, đo lường được
+                - Hirer ký quỹ trước khi mở công việc
+                - AI hỗ trợ đánh giá và phân tích tiêu chí
+                - Thanh toán an toàn qua ví điện tử
+
+                ## Vai trò:
+                - Trả lời câu hỏi về cách TaskHub hoạt động
+                - Hướng dẫn sinh viên tìm việc, nhận việc, nộp bài
+                - Hướng dẫn hirer đăng công việc, quản lý freelancer
+                - Giải đáp thắc mắc về thanh toán, ký quỹ, tranh chấp
+                - Khuyến khích đăng ký khi phù hợp
+
+                ## Quy tắc:
+                - Trả lời ngắn gọn, thân thiện, bằng tiếng Việt
+                - Không hỏi thông tin cá nhân
+                - Không lưu trữ lịch sử chat
+                - Nếu câu hỏi ngoài phạm vi TaskHub, hãy nói rõ và gợi ý liên hệ hỗ trợ
+
+                Câu hỏi của người dùng: """ + message + "\n\nTrả lời:";
+
+        try {
+            return callAi(prompt);
+        } catch (Exception e) {
+            log.warn("Public chat failed: {}", e.getMessage());
+            return "Xin lỗi, tôi đang gặp sự cố. Bạn có thể thử lại sau hoặc liên hệ hỗ trợ qua email.";
+        }
     }
 
     public List<Map<String, Object>> getChatHistory(Long sessionId, String userId) {
@@ -505,13 +574,6 @@ public class GeminiAiService {
     }
 
     // ── Core Gemini Call ───────────────────────────────────────────────────────
-
-    private String callGemini(String prompt) {
-        Map<String, Object> body = new HashMap<>();
-        body.put("contents", List.of(Map.of("parts", List.of(Map.of("text", prompt)))));
-        body.put("generationConfig", Map.of("temperature", 0.7, "topP", 0.9, "maxOutputTokens", 2048));
-        return callGeminiWithBody(prompt, body);
-    }
 
     private String callGeminiWithBody(String prompt, Map<String, Object> body) {
         try {
@@ -554,6 +616,81 @@ public class GeminiAiService {
                     "AI service unavailable: " + e.getMessage(),
                     org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE);
         }
+    }
+
+    // ── Claude AI (Anthropic Direct API) ───────────────────────────────────────
+
+    @Value("${app.claude.api-key:}")
+    private String claudeApiKey;
+
+    @Value("${app.claude.model:anthropic.claude-3-5-sonnet-20240620-v1:0}")
+    private String claudeModel;
+
+    @Value("${app.claude.region:us-east-1}")
+    private String awsRegion;
+
+    /**
+     * Call Claude AI via AWS Bedrock.
+     * Requires AWS credentials configured (via environment variables or IAM role).
+     */
+    public String callClaude(String prompt) {
+        try {
+            if (claudeApiKey == null || claudeApiKey.isBlank()) {
+                log.warn("Claude API key not configured, falling back to Gemini");
+                return callGeminiFallback(prompt);
+            }
+
+            // AWS Bedrock via HTTP (Bearer token auth)
+            String bedrockUrl = "https://bedrock-runtime." + awsRegion + ".amazonaws.com/model/" + claudeModel + "/invoke";
+
+            Map<String, Object> body = new HashMap<>();
+            body.put("anthropic_version", "bedrock-2023-05-31");
+            body.put("max_tokens", 2048);
+            body.put("messages", List.of(Map.of("role", "user", "content", List.of(Map.of("type", "text", "text", prompt)))));
+
+            String jsonBody = objectMapper.writeValueAsString(body);
+
+            HttpRequest httpRequest = HttpRequest.newBuilder()
+                    .uri(URI.create(bedrockUrl))
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", "Bearer " + claudeApiKey)
+                    .header("Accept", "application/json")
+                    .timeout(Duration.ofSeconds(90))
+                    .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() >= 400) {
+                log.error("Bedrock API error {}: {}", response.statusCode(), response.body());
+                throw new TaskHubException("Claude AI (Bedrock) error: " + response.statusCode(), org.springframework.http.HttpStatus.BAD_GATEWAY);
+            }
+
+            JsonNode root = objectMapper.readTree(response.body());
+            String text = root.path("content").path(0).path("text").asText("");
+            return text.isBlank() ? "Không nhận được phản hồi từ AI." : text;
+
+        } catch (TaskHubException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Claude (Bedrock) call failed: {}", e.getMessage());
+            log.info("Falling back to Gemini AI");
+            return callGeminiFallback(prompt);
+        }
+    }
+
+    private String callGeminiFallback(String prompt) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("contents", List.of(Map.of("parts", List.of(Map.of("text", prompt)))));
+        body.put("generationConfig", Map.of("temperature", 0.7, "topP", 0.9, "maxOutputTokens", 2048));
+        return callGeminiWithBody(prompt, body);
+    }
+
+    public String callAi(String prompt) {
+        if (claudeApiKey != null && !claudeApiKey.isBlank()) {
+            return callClaude(prompt);
+        }
+        return callGeminiFallback(prompt);
     }
 
     // ── Session Management ─────────────────────────────────────────────────────
@@ -883,7 +1020,7 @@ public class GeminiAiService {
 
     public AiPricingResponse estimateTaskPrice(AiPricingRequest request) {
         String prompt = buildPricingPrompt(request);
-        String reply = callGemini(prompt);
+        String reply = callAi(prompt);
         return parsePricingResponse(reply, request);
     }
 

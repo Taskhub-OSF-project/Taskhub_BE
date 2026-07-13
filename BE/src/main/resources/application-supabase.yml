@@ -19,7 +19,8 @@ spring:
         dialect: org.hibernate.dialect.PostgreSQLDialect
 
   flyway:
-    enabled: ${SPRING_FLYWAY_ENABLED:false}
+    enabled: false
     baseline-on-migrate: true
-    baseline-version: '0'
+    baseline-version: '1'
+    baseline-description: 'Existing schema baseline'
     locations: classpath:db/migration

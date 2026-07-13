@@ -118,6 +118,12 @@
             <artifactId>google-cloud-vertexai</artifactId>
             <version>1.7.0</version>
         </dependency>
+        <!-- AWS SDK for Bedrock (Claude) -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>bedrockruntime</artifactId>
+            <version>2.31.0</version>
+        </dependency>
         <!-- PDF text extraction (criteria service) -->
         <dependency>
             <groupId>org.apache.pdfbox</groupId>

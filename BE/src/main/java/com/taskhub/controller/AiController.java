@@ -55,6 +55,26 @@ public class AiController {
         return ResponseEntity.ok(aiService.chat(request, AuthUtil.getCurrentUser().getId().toString()));
     }
 
+    /**
+     * Public chat endpoint for non-authenticated users (landing page chatbot).
+     * No session storage - just a simple Q&A about TaskHub.
+     */
+    @PostMapping("/public/chat")
+    public ResponseEntity<AiChatResponse> publicChat(
+            @RequestBody Map<String, Object> body) {
+        String message = (String) body.get("message");
+        if (message == null || message.isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
+        String reply = aiService.publicChat(message);
+        return ResponseEntity.ok(AiChatResponse.builder()
+                .reply(reply)
+                .sessionType("PUBLIC")
+                .responseType("TEXT")
+                .timestamp(java.time.LocalDateTime.now())
+                .build());
+    }
+
     @GetMapping("/chat/history/{sessionId}")
     public ResponseEntity<List<Map<String, Object>>> getChatHistory(@PathVariable Long sessionId) {
         return ResponseEntity.ok(aiService.getChatHistory(sessionId, AuthUtil.getCurrentUser().getId().toString()));

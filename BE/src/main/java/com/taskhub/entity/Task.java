@@ -48,7 +48,7 @@ public class Task extends BaseEntity {
     @Builder.Default
     private List<AcceptanceCriteria> acceptanceCriteria = new ArrayList<>();
 
-    @Column(name = "submission_ai_result_json", columnDefinition = "NVARCHAR(MAX)")
+    @Column(name = "submission_ai_result_json", columnDefinition = "TEXT")
     private String submissionAIResultJson;
 
     private LocalDateTime latestPrecheckAt;

@@ -14,6 +14,7 @@ import com.taskhub.service.CriteriaExtractionService;
 import com.taskhub.service.DisputeService;
 import com.taskhub.service.EscrowService;
 import com.taskhub.service.SubmissionService;
+import com.taskhub.service.TaskRemovalService;
 import com.taskhub.service.TaskService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +36,7 @@ public class TaskController {
     private final SubmissionService submissionService;
     private final DisputeService disputeService;
     private final EscrowService escrowService;
+    private final TaskRemovalService taskRemovalService;
 
     @PostMapping
     @PreAuthorize("hasAnyRole('HIRER', 'ADMIN')")
@@ -182,6 +184,30 @@ public class TaskController {
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable Long id) {
         taskService.deleteTask(id);
         return ResponseEntity.ok(ApiResponse.ok("Task deleted", null));
+    }
+
+    @PostMapping("/{id}/removal")
+    @PreAuthorize("hasAnyRole('HIRER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<TaskRemovalResponse>> requestRemoval(
+            @PathVariable Long id,
+            @Valid @RequestBody TaskRemovalRequestDto req) {
+        return ResponseEntity.ok(ApiResponse.ok("Yêu cầu gỡ job đã được gửi",
+                taskRemovalService.requestRemoval(id, req)));
+    }
+
+    @GetMapping("/{id}/removal/report")
+    public ResponseEntity<ApiResponse<RemovalAIReport>> getRemovalReport(@PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.ok("AI report retrieved",
+                taskRemovalService.getAIRemovalReport(id)));
+    }
+
+    @GetMapping("/removal/mine")
+    public ResponseEntity<ApiResponse<PageResponse<TaskRemovalResponse>>> myRemovalRequests(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        PageRequestDto pageReq = PageRequestDto.builder().page(page).size(size).build();
+        return ResponseEntity.ok(ApiResponse.ok("My removal requests retrieved",
+                taskRemovalService.getMyRemovalRequests(pageReq)));
     }
 
     private List<AiValidationService.CriteriaSuggestion> toSuggestions(
