@@ -37,7 +37,7 @@ Globals:
     Architectures:
       - x86_64
     MemorySize: 3008
-    Timeout: 30
+    Timeout: 60
     Tracing: Active
 
 Resources:
