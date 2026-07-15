@@ -103,6 +103,21 @@ public class ReviewService {
     }
 
     @Transactional(readOnly = true)
+    public PageResponse<ReviewResponse> getLatestPublicReviews(PageRequestDto pageReq) {
+        Page<Review> page = reviewRepository.findByIsPublicTrueOrderByCreatedAtDesc(
+                org.springframework.data.domain.PageRequest.of(
+                        pageReq.getPage(),
+                        Math.min(pageReq.getSize(), 50)));
+        return PageResponse.<ReviewResponse>builder()
+                .content(page.getContent().stream().map(this::toResponse).toList())
+                .page(page.getNumber()).size(page.getSize())
+                .totalElements(page.getTotalElements()).totalPages(page.getTotalPages())
+                .first(page.isFirst()).last(page.isLast())
+                .hasNext(page.hasNext()).hasPrevious(page.hasPrevious())
+                .build();
+    }
+
+    @Transactional(readOnly = true)
     public UserProfileResponse getUserProfile(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> TaskHubException.notFound("User not found"));

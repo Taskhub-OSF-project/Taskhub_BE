@@ -25,6 +25,14 @@ public class ReviewController {
         return ResponseEntity.ok(ApiResponse.ok("Review submitted", reviewService.createReview(taskId, req)));
     }
 
+    @GetMapping("/latest")
+    public ResponseEntity<ApiResponse<PageResponse<ReviewResponse>>> getLatestReviews(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        PageRequestDto pageReq = PageRequestDto.builder().page(page).size(size).build();
+        return ResponseEntity.ok(ApiResponse.ok(reviewService.getLatestPublicReviews(pageReq)));
+    }
+
     @GetMapping("/user/{userId}")
     public ResponseEntity<ApiResponse<PageResponse<ReviewResponse>>> getUserReviews(
             @PathVariable Long userId,
