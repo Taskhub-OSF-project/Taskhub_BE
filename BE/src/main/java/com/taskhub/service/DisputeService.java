@@ -47,14 +47,14 @@ public class DisputeService {
             throw TaskHubException.badRequest("Request body is required");
         }
 
-        User hirer = AuthUtil.getCurrentUser();
-        if (hirer.getRole() != Role.HIRER) {
-            throw TaskHubException.forbidden("Only hirers can open a dispute");
-        }
+        User actor = AuthUtil.getCurrentUser();
 
-        Task task = taskService.findTask(taskId);
-        if (!task.getHirer().getId().equals(hirer.getId())) {
-            throw TaskHubException.forbidden("Not your task");
+        Task task = taskRepo.findByIdForUpdate(taskId)
+                .orElseThrow(() -> TaskHubException.notFound("Task not found"));
+        boolean isOwner = task.getHirer() != null && task.getHirer().getId().equals(actor.getId());
+        boolean isAssigned = task.getAssignedTo() != null && task.getAssignedTo().getId().equals(actor.getId());
+        if (!isOwner && !isAssigned) {
+            throw TaskHubException.forbidden("Only task participants can open a dispute");
         }
         if (task.getStatus() != TaskStatus.SUBMITTED) {
             throw TaskHubException.badRequest("Dispute can only be opened on SUBMITTED tasks");
@@ -74,7 +74,7 @@ public class DisputeService {
         taskService.transition(task, TaskStatus.DISPUTED);
         taskRepo.save(task);
 
-        recordEvent(task, "DISPUTE_OPENED", hirer.getId(), hirer.getRole().name(),
+        recordEvent(task, "DISPUTE_OPENED", actor.getId(), actor.getRole().name(),
                 "Reason: " + req.getReason() + ". Description: " + req.getDescription(),
                 report.getRecommendation(), null);
 
@@ -89,7 +89,7 @@ public class DisputeService {
         }
 
         log.info("Dispute opened for task {} by hirer {}. Recommendation: {}",
-                taskId, hirer.getId(), report.getRecommendation());
+                taskId, actor.getId(), report.getRecommendation());
         return report;
     }
 
@@ -101,7 +101,7 @@ public class DisputeService {
         boolean isHirerOwner = task.getHirer() != null && task.getHirer().getId().equals(currentUser.getId());
         boolean isAssignedStudent = task.getAssignedTo() != null && task.getAssignedTo().getId().equals(currentUser.getId());
 
-        if (!isHirerOwner && !isAssignedStudent) {
+        if (currentUser.getRole() != Role.ADMIN && !isHirerOwner && !isAssignedStudent) {
             throw TaskHubException.forbidden("Not allowed to view dispute report");
         }
         if (task.getStatus() != TaskStatus.DISPUTED) {
@@ -122,7 +122,7 @@ public class DisputeService {
         boolean isHirerOwner = task.getHirer() != null && task.getHirer().getId().equals(currentUser.getId());
         boolean isAssignedStudent = task.getAssignedTo() != null && task.getAssignedTo().getId().equals(currentUser.getId());
 
-        if (!isHirerOwner && !isAssignedStudent) {
+        if (currentUser.getRole() != Role.ADMIN && !isHirerOwner && !isAssignedStudent) {
             throw TaskHubException.forbidden("Not allowed to view dispute history");
         }
 
@@ -191,6 +191,9 @@ public class DisputeService {
     @Transactional
     public DisputeResolveResponse adminResolveDispute(Long taskId, DisputeResolveRequest req) {
         User admin = AuthUtil.getCurrentUser();
+        if (admin.getRole() != Role.ADMIN) {
+            throw TaskHubException.forbidden("Only admins can resolve escalated disputes");
+        }
 
         Task task = taskService.findTask(taskId);
         if (task.getStatus() != TaskStatus.DISPUTED) {

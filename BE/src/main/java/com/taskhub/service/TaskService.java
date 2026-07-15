@@ -26,6 +26,7 @@ public class TaskService {
     private final AiValidationService aiValidation;
     private final WalletService walletService;
     private final TaskApplicationRepository appRepository;
+    private final MilestoneRepository milestoneRepository;
 
     @Transactional
     public TaskResponse createTask(CreateTaskRequest req) {
@@ -53,6 +54,12 @@ public class TaskService {
     public TaskResponse getTask(Long id) {
         Task task = findTask(id);
         User user = AuthUtil.getCurrentUser();
+        boolean isAdmin = user.getRole() == Role.ADMIN;
+        boolean isOwner = task.getHirer() != null && task.getHirer().getId().equals(user.getId());
+        boolean isAssigned = task.getAssignedTo() != null && task.getAssignedTo().getId().equals(user.getId());
+        if (task.getStatus() == TaskStatus.DRAFT && !isAdmin && !isOwner && !isAssigned) {
+            throw TaskHubException.forbidden("You do not have permission to view this draft task");
+        }
         boolean includeApplicants = user.getRole() == Role.HIRER &&
                 task.getHirer().getId().equals(user.getId());
         return toResponse(task, includeApplicants);
@@ -195,8 +202,18 @@ public class TaskService {
 
     @Transactional
     public TaskResponse lockTask(Long taskId) {
-        Task task = findOwnedTask(taskId);
+        Task task = taskRepository.findByIdForUpdate(taskId)
+                .orElseThrow(() -> TaskHubException.notFound("Task not found"));
+        if (!task.getHirer().getId().equals(AuthUtil.getCurrentUser().getId())) {
+            throw TaskHubException.forbidden("Not your task");
+        }
         validateTransition(task, TaskStatus.LOCKED);
+
+        var milestones = milestoneRepository.findByTaskIdOrderByDisplayOrder(taskId);
+        if (!milestones.isEmpty()
+                && milestoneRepository.sumAmountByTaskId(taskId).compareTo(task.getBudget()) != 0) {
+            throw TaskHubException.badRequest("Milestone total must equal task budget before locking");
+        }
 
         List<String> criteriaDescs = task.getAcceptanceCriteria().stream()
                 .map(AcceptanceCriteria::getDescription).toList();

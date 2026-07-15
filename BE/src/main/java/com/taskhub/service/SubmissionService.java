@@ -272,15 +272,7 @@ public class SubmissionService {
     public LatestSubmissionResultResponse getLatest(Long taskId) {
         User currentUser = AuthUtil.getCurrentUser();
         Task task = taskService.findTask(taskId);
-        boolean isHirerOwner = task.getHirer() != null && task.getHirer().getId().equals(currentUser.getId());
-        boolean isAssignedStudent = task.getAssignedTo() != null && task.getAssignedTo().getId().equals(currentUser.getId());
-        if (!isHirerOwner && !isAssignedStudent) {
-            return LatestSubmissionResultResponse.builder()
-                    .taskId(task.getId())
-                    .taskStatus(task.getStatus())
-                    // Các trường khác mặc định null để bảo mật thông tin
-                    .build();
-        }
+        checkViewPermission(task, currentUser);
 
         SubmissionResponse latestSubmission = submissionRepo.findTopByTaskIdOrderBySubmittedAtDesc(taskId)
                 .map(this::toResponse)
@@ -309,12 +301,7 @@ public class SubmissionService {
     public List<RevisionRequestResponse> getRevisionHistory(Long taskId) {
         User currentUser = AuthUtil.getCurrentUser();
         Task task = taskService.findTask(taskId);
-        boolean isHirerOwner = task.getHirer() != null && task.getHirer().getId().equals(currentUser.getId());
-        boolean isAssignedStudent = task.getAssignedTo() != null && task.getAssignedTo().getId().equals(currentUser.getId());
-        // SỬA Ở ĐÂY: Trả về List rỗng thay vì throw Exception
-        if (!isHirerOwner && !isAssignedStudent) {
-            return List.of();
-        }
+        checkViewPermission(task, currentUser);
 
         return revisionRequestRepo.findByTaskIdOrderByCreatedAtAsc(taskId)
                 .stream()

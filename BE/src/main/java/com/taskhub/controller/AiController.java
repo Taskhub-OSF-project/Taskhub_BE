@@ -3,7 +3,7 @@ package com.taskhub.controller;
 import com.taskhub.dto.request.*;
 import com.taskhub.dto.response.*;
 import com.taskhub.security.AuthUtil;
-import com.taskhub.service.GeminiAiService;
+import com.taskhub.service.TaskHubAiService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -17,7 +17,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class AiController {
 
-    private final GeminiAiService aiService;
+    private final TaskHubAiService aiService;
 
     @PostMapping("/progress")
     public ResponseEntity<AiProgressResponse> analyzeProgress(

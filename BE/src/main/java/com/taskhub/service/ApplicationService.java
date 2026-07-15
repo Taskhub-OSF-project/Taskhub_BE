@@ -31,7 +31,10 @@ public class ApplicationService {
         if (student.getRole() != Role.STUDENT)
             throw TaskHubException.forbidden("Only students can apply");
 
-        Task task = taskService.findTask(taskId);
+        Task task = taskRepo.findByIdForUpdate(taskId)
+                .orElseThrow(() -> TaskHubException.notFound("Task not found"));
+        if (task.getHirer().getId().equals(student.getId()))
+            throw TaskHubException.badRequest("You cannot apply to your own task");
         if (task.getStatus() != TaskStatus.ACTIVE)
             throw TaskHubException.badRequest("Task is not accepting applications");
         if (task.getDeadline() != null && task.getDeadline().isBefore(java.time.LocalDateTime.now()))
@@ -60,14 +63,17 @@ public class ApplicationService {
     @Transactional
     public void acceptApplication(Long applicationId) {
         User hirer = AuthUtil.getCurrentUser();
-        TaskApplication app = appRepo.findById(applicationId)
+        TaskApplication app = appRepo.findByIdForUpdate(applicationId)
                 .orElseThrow(() -> TaskHubException.notFound("Application not found"));
-        Task task = app.getTask();
+        Task task = taskRepo.findByIdForUpdate(app.getTask().getId())
+                .orElseThrow(() -> TaskHubException.notFound("Task not found"));
 
         if (!task.getHirer().getId().equals(hirer.getId()))
             throw TaskHubException.forbidden("Not your task");
         if (task.getStatus() != TaskStatus.ACTIVE)
             throw TaskHubException.badRequest("Task is not ACTIVE");
+        if (task.getDeadline() != null && !task.getDeadline().isAfter(java.time.LocalDateTime.now()))
+            throw TaskHubException.badRequest("Task deadline has passed");
 
         if (app.getStatus() != ApplicationStatus.PENDING)
             throw TaskHubException.badRequest("Application is not PENDING");

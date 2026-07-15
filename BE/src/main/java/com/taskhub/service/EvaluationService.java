@@ -35,7 +35,7 @@ public class EvaluationService {
     private final EvaluationRecordRepository evaluationRecordRepository;
     private final SubmissionRepository submissionRepository;
     private final AcceptanceCriteriaRepository criteriaRepository;
-    private final GeminiAiService geminiAiService;
+    private final TaskHubAiService aiService;
     private final ObjectMapper objectMapper;
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -106,6 +106,13 @@ public class EvaluationService {
         // 2. Lấy criteria cần đánh giá
         if (request.getCriteriaIds() != null && !request.getCriteriaIds().isEmpty()) {
             criteriaList = criteriaRepository.findAllById(request.getCriteriaIds());
+            boolean completeSelection = criteriaList.size() == request.getCriteriaIds().size();
+            boolean belongsToSubmissionTask = criteriaList.stream()
+                    .allMatch(criteria -> criteria.getTask() != null
+                            && criteria.getTask().getId().equals(task.getId()));
+            if (!completeSelection || !belongsToSubmissionTask) {
+                throw TaskHubException.badRequest("All evaluation criteria must belong to the submission task");
+            }
         } else {
             criteriaList = criteriaRepository.findByTaskIdOrderByIdAsc(task.getId());
         }
@@ -123,7 +130,7 @@ public class EvaluationService {
                         .customCriteria(buildCriteriaJson(criteriaList))
                         .build();
 
-        com.taskhub.dto.response.AiEvaluationResponse aiResult = geminiAiService.evaluateSubmission(aiRequest);
+        com.taskhub.dto.response.AiEvaluationResponse aiResult = aiService.evaluateSubmission(aiRequest);
 
         // 4. Tạo EvaluationRecords cho từng tiêu chí
         List<EvaluationRecord> records = new ArrayList<>();
@@ -308,6 +315,17 @@ public class EvaluationService {
     public EvaluationResponse getEvaluation(Long submissionId) {
         Submission submission = submissionRepository.findById(submissionId)
                 .orElseThrow(() -> TaskHubException.notFound("Submission not found"));
+
+        User currentUser = AuthUtil.getCurrentUser();
+        Task task = submission.getTask();
+        boolean isAdmin = currentUser.getRole() == Role.ADMIN;
+        boolean isOwner = task.getHirer() != null
+                && task.getHirer().getId().equals(currentUser.getId());
+        boolean isAssignedStudent = task.getAssignedTo() != null
+                && task.getAssignedTo().getId().equals(currentUser.getId());
+        if (!isAdmin && !isOwner && !isAssignedStudent) {
+            throw TaskHubException.forbidden("You do not have permission to view this evaluation");
+        }
 
         List<EvaluationRecord> records = evaluationRecordRepository
                 .findBySubmissionIdOrderByIdAsc(submissionId);

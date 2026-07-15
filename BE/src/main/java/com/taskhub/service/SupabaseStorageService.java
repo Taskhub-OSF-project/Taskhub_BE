@@ -16,6 +16,9 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
+import java.util.Map;
+import org.springframework.web.util.UriUtils;
+import java.nio.charset.StandardCharsets;
 
 @Service
 @RequiredArgsConstructor
@@ -79,6 +82,44 @@ public class SupabaseStorageService implements FileStorageService {
             throw TaskHubException.internalError("Supabase upload failed: HTTP " + ex.getStatusCode().value());
         } catch (IOException | RestClientException ex) {
             throw TaskHubException.internalError("Supabase upload failed");
+        }
+    }
+
+    @Override
+    public String createSignedUrl(String path, Long taskId) {
+        validateTaskPath(path, taskId);
+        if (!isConfigured()) {
+            throw TaskHubException.internalError("Private file storage is not configured");
+        }
+        try {
+            String encodedPath = UriUtils.encodePath(path, StandardCharsets.UTF_8);
+            String endpoint = normalizedUrl() + "/storage/v1/object/sign/"
+                    + UriUtils.encodePathSegment(properties.getStorage().getBucket(), StandardCharsets.UTF_8)
+                    + "/" + encodedPath;
+            @SuppressWarnings("unchecked")
+            Map<String, Object> body = restClientBuilder.build().post().uri(endpoint)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + properties.getServiceRoleKey())
+                    .header("apikey", properties.getServiceRoleKey())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of("expiresIn", 300))
+                    .retrieve().body(Map.class);
+            Object signed = body == null ? null : body.get("signedURL");
+            if (signed == null && body != null) signed = body.get("signedUrl");
+            if (signed == null) throw TaskHubException.internalError("Storage did not return a signed URL");
+            String value = signed.toString();
+            return value.startsWith("http") ? value : normalizedUrl() + "/storage/v1" + value;
+        } catch (RestClientResponseException ex) {
+            throw TaskHubException.internalError("Unable to create private file URL");
+        } catch (RestClientException ex) {
+            throw TaskHubException.internalError("Unable to create private file URL");
+        }
+    }
+
+    private void validateTaskPath(String path, Long taskId) {
+        String prefix = "submissions/task-" + taskId + "/";
+        if (taskId == null || path == null || !path.startsWith(prefix)
+                || path.contains("..") || path.contains("\\") || path.chars().anyMatch(Character::isISOControl)) {
+            throw TaskHubException.forbidden("File path is outside the task namespace");
         }
     }
 

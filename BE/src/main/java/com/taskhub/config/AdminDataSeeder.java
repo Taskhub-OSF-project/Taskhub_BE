@@ -27,7 +27,7 @@ public class AdminDataSeeder implements CommandLineRunner {
     @Value("${app.admin.full-name:TaskHub Admin}")
     private String adminFullName;
 
-    @Value("${app.admin.enabled:true}")
+    @Value("${app.admin.enabled:false}")
     private boolean seederEnabled;
 
     @Override
@@ -35,6 +35,13 @@ public class AdminDataSeeder implements CommandLineRunner {
         if (!seederEnabled) {
             log.info("[SEEDER] Admin seeder is disabled (app.admin.enabled=false)");
             return;
+        }
+
+        if (adminEmail == null || adminEmail.isBlank()
+                || adminPassword == null || adminPassword.isBlank()
+                || "Admin@TaskHub2026".equals(adminPassword)) {
+            throw new IllegalStateException(
+                    "Admin seeding requires a non-default email and password");
         }
 
         if (userRepository.existsByEmail(adminEmail)) {
@@ -55,7 +62,7 @@ public class AdminDataSeeder implements CommandLineRunner {
         log.warn("[SEEDER] ============================================================");
         log.warn("[SEEDER] Default admin account created:");
         log.warn("[SEEDER]   Email:    {}", adminEmail);
-        log.warn("[SEEDER]   Password: {}", adminPassword);
+        log.warn("[SEEDER] Password is intentionally not logged");
         log.warn("[SEEDER] Login URL (FE): /login (use the admin credentials above)");
         log.warn("[SEEDER] Admin URL  (FE): /admin  (hidden route — no nav link)");
         log.warn("[SEEDER] CHANGE THE PASSWORD IMMEDIATELY IN PRODUCTION.");

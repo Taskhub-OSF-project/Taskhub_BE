@@ -2,6 +2,7 @@ package com.taskhub.service.mail;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Primary;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 /**
@@ -12,15 +13,26 @@ import org.springframework.stereotype.Service;
 @Slf4j
 @Service
 @Primary
+@ConditionalOnProperty(name = "app.mail.delivery-enabled", havingValue = "false", matchIfMissing = true)
 public class LoggingMailService implements MailService {
 
     @Override
+    public boolean isDeliveryEnabled() {
+        return false;
+    }
+
+    @Override
     public void sendPasswordReset(String toEmail, String resetLink) {
-        log.warn("[MAIL:DEV] Password reset for {} -> {}", toEmail, resetLink);
+        log.info("Password reset email skipped because delivery is disabled (recipient={})", mask(toEmail));
     }
 
     @Override
     public void sendEmailVerification(String toEmail, String verifyLink) {
-        log.warn("[MAIL:DEV] Email verification for {} -> {}", toEmail, verifyLink);
+        log.info("Verification email skipped because delivery is disabled (recipient={})", mask(toEmail));
+    }
+
+    private String mask(String email) {
+        if (email == null || !email.contains("@")) return "***";
+        return email.charAt(0) + "***" + email.substring(email.indexOf('@'));
     }
 }

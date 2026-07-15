@@ -1,9 +1,9 @@
 # Supabase Postgres. Set SPRING_PROFILES_ACTIVE=supabase when running against Supabase.
 spring:
+  config:
+    activate:
+      on-profile: supabase
   datasource:
-    config:
-      activate:
-        on-profile: supabase # <--- BẮT BUỘC PHẢI THÊM 3 DÒNG NÀY Ở ĐẦU FILE
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require&prepareThreshold=0}
     username: ${SPRING_DATASOURCE_USERNAME:postgres.wwduzspwejdyvbnjxkkz}
     password: ${SPRING_DATASOURCE_PASSWORD}
@@ -11,7 +11,7 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:update}
+      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:validate}
     show-sql: ${SPRING_JPA_SHOW_SQL:false}
     properties:
       hibernate:
@@ -19,8 +19,8 @@ spring:
         dialect: org.hibernate.dialect.PostgreSQLDialect
 
   flyway:
-    enabled: false
+    enabled: ${SPRING_FLYWAY_ENABLED:true}
     baseline-on-migrate: true
-    baseline-version: '1'
+    baseline-version: '4'
     baseline-description: 'Existing schema baseline'
     locations: classpath:db/migration

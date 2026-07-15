@@ -4,12 +4,15 @@ import com.taskhub.dto.SubmittedFileDto;
 import com.taskhub.dto.request.SubmissionRequest;
 import com.taskhub.dto.response.SubmissionResponse;
 import com.taskhub.entity.AcceptanceCriteria;
+import com.taskhub.entity.Escrow;
 import com.taskhub.entity.Task;
 import com.taskhub.entity.User;
 import com.taskhub.enums.Role;
+import com.taskhub.enums.EscrowStatus;
 import com.taskhub.enums.TaskStatus;
 import com.taskhub.exception.TaskHubException;
 import com.taskhub.repository.SubmissionRepository;
+import com.taskhub.repository.EscrowRepository;
 import com.taskhub.repository.TaskRepository;
 import com.taskhub.repository.UserRepository;
 import com.taskhub.service.SubmissionService;
@@ -34,6 +37,7 @@ class Phase3SubmissionFilesTests {
     @Autowired private SubmissionRepository submissionRepository;
     @Autowired private TaskRepository taskRepository;
     @Autowired private UserRepository userRepository;
+    @Autowired private EscrowRepository escrowRepository;
 
     @AfterEach
     void clearAuth() {
@@ -230,6 +234,12 @@ class Phase3SubmissionFilesTests {
                 .description("work file application deliverable")
                 .task(task)
                 .build());
-        return taskRepository.save(task);
+        Task saved = taskRepository.save(task);
+        if (status == TaskStatus.IN_PROGRESS) {
+            escrowRepository.save(Escrow.builder()
+                    .task(saved).amount(saved.getBudget()).platformFee(BigDecimal.ZERO)
+                    .status(EscrowStatus.FUNDED).build());
+        }
+        return saved;
     }
 }

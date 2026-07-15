@@ -8,6 +8,7 @@ import com.taskhub.entity.User;
 import com.taskhub.enums.ReviewType;
 import com.taskhub.enums.Role;
 import com.taskhub.enums.TaskStatus;
+import com.taskhub.exception.TaskHubException;
 import com.taskhub.repository.*;
 import com.taskhub.util.EscrowCalculator;
 import lombok.RequiredArgsConstructor;
@@ -33,16 +34,21 @@ public class AnalyticsService {
 
     @Transactional(readOnly = true)
     public AnalyticsDashboardResponse getAnalyticsDashboard(int days) {
+        if (days < 1 || days > 365) {
+            throw TaskHubException.badRequest("days must be between 1 and 365");
+        }
         LocalDate endDate = LocalDate.now();
-        LocalDate startDate = endDate.minusDays(days);
+        LocalDate startDate = endDate.minusDays(days - 1L);
+        List<Task> allTasks = taskRepository.findAll();
+        List<User> allUsers = userRepository.findAll();
 
-        PlatformOverview overview = buildOverview();
+        PlatformOverview overview = buildOverview(allTasks);
         List<DailyMetricResponse> dailyMetrics = buildDailyMetrics(startDate, endDate);
-        List<CategoryMetric> topCategories = buildCategoryMetrics();
-        List<UserGrowthMetric> userGrowth = buildUserGrowth(startDate, endDate);
-        TaskMetrics taskMetrics = buildTaskMetrics();
-        RevenueMetrics revenueMetrics = buildRevenueMetrics();
-        FreelancerMetrics freelancerMetrics = buildFreelancerMetrics();
+        List<CategoryMetric> topCategories = buildCategoryMetrics(allTasks);
+        List<UserGrowthMetric> userGrowth = buildUserGrowth(startDate, endDate, allUsers);
+        TaskMetrics taskMetrics = buildTaskMetrics(allTasks);
+        RevenueMetrics revenueMetrics = buildRevenueMetrics(allTasks);
+        FreelancerMetrics freelancerMetrics = buildFreelancerMetrics(allUsers);
 
         return AnalyticsDashboardResponse.builder()
                 .overview(overview)
@@ -55,13 +61,12 @@ public class AnalyticsService {
                 .build();
     }
 
-    private PlatformOverview buildOverview() {
+    private PlatformOverview buildOverview(List<Task> allTasks) {
         long totalUsers = userRepository.count();
         long totalStudents = userRepository.countByRole(Role.STUDENT);
         long totalHirers = userRepository.countByRole(Role.HIRER);
         long totalTasks = taskRepository.count();
 
-        List<Task> allTasks = taskRepository.findAll();
         long activeTasks = allTasks.stream().filter(t -> t.getStatus() == TaskStatus.ACTIVE || t.getStatus() == TaskStatus.IN_PROGRESS).count();
         long completedTasks = allTasks.stream().filter(t -> t.getStatus() == TaskStatus.COMPLETED).count();
         long disputedTasks = allTasks.stream().filter(t -> t.getStatus() == TaskStatus.DISPUTED).count();
@@ -94,9 +99,7 @@ public class AnalyticsService {
                 .collect(Collectors.toList());
     }
 
-    private List<CategoryMetric> buildCategoryMetrics() {
-        List<Task> allTasks = taskRepository.findAll();
-
+    private List<CategoryMetric> buildCategoryMetrics(List<Task> allTasks) {
         Map<String, List<Task>> byCategory = allTasks.stream()
                 .filter(t -> t.getCategory() != null)
                 .collect(Collectors.groupingBy(Task::getCategory));
@@ -121,9 +124,7 @@ public class AnalyticsService {
                 .collect(Collectors.toList());
     }
 
-    private List<UserGrowthMetric> buildUserGrowth(LocalDate start, LocalDate end) {
-        List<User> allUsers = userRepository.findAll();
-
+    private List<UserGrowthMetric> buildUserGrowth(LocalDate start, LocalDate end, List<User> allUsers) {
         return dailyMetricRepository.findByMetricDateBetweenOrderByMetricDateAsc(start, end)
                 .stream()
                 .map(m -> {
@@ -149,9 +150,7 @@ public class AnalyticsService {
                 .collect(Collectors.toList());
     }
 
-    private TaskMetrics buildTaskMetrics() {
-        List<Task> allTasks = taskRepository.findAll();
-
+    private TaskMetrics buildTaskMetrics(List<Task> allTasks) {
         long byDraft = allTasks.stream().filter(t -> t.getStatus() == TaskStatus.DRAFT).count();
         long byActive = allTasks.stream().filter(t -> t.getStatus() == TaskStatus.ACTIVE).count();
         long byInProgress = allTasks.stream().filter(t -> t.getStatus() == TaskStatus.IN_PROGRESS).count();
@@ -183,8 +182,10 @@ public class AnalyticsService {
                 .build();
     }
 
-    private RevenueMetrics buildRevenueMetrics() {
-        List<Task> completedTasks = taskRepository.findByStatusIn(List.of(TaskStatus.COMPLETED));
+    private RevenueMetrics buildRevenueMetrics(List<Task> allTasks) {
+        List<Task> completedTasks = allTasks.stream()
+                .filter(task -> task.getStatus() == TaskStatus.COMPLETED)
+                .toList();
 
         BigDecimal totalRevenue = completedTasks.stream()
                 .map(Task::getBudget)
@@ -219,29 +220,30 @@ public class AnalyticsService {
                 .build();
     }
 
-    private FreelancerMetrics buildFreelancerMetrics() {
-        List<User> freelancers = userRepository.findByRole(Role.STUDENT, org.springframework.data.domain.Pageable.unpaged()).getContent();
+    private FreelancerMetrics buildFreelancerMetrics(List<User> allUsers) {
+        List<User> freelancers = allUsers.stream().filter(user -> user.getRole() == Role.STUDENT).toList();
         long totalFreelancers = freelancers.size();
         long activeFreelancers = freelancers.stream().filter(u -> Boolean.TRUE.equals(u.getIsAvailable())).count();
+        List<Long> freelancerIds = freelancers.stream().map(User::getId).toList();
+        Map<Long, Double> ratings = freelancerIds.isEmpty() ? Map.of()
+                : reviewRepository.getPublicStatsForUsers(freelancerIds, ReviewType.HIRER_TO_FREELANCER)
+                        .stream().collect(Collectors.toMap(
+                                row -> ((Number) row[0]).longValue(),
+                                row -> ((Number) row[1]).doubleValue()));
+        Map<Long, Object[]> taskStats = freelancerIds.isEmpty() ? Map.of()
+                : taskRepository.getAssigneeTaskStats(freelancerIds, TaskStatus.COMPLETED)
+                        .stream().collect(Collectors.toMap(
+                                row -> ((Number) row[0]).longValue(), row -> row));
 
-        double avgRating = freelancers.stream()
-                .mapToDouble(u -> {
-                    Double r = reviewRepository.getAverageRating(u.getId(), ReviewType.FREELANCER_TO_HIRER);
-                    return r != null ? r : 0.0;
-                })
-                .filter(r -> r > 0)
-                .average().orElse(0.0);
-
-        double avgEarnings = freelancers.stream()
-                .mapToDouble(u -> taskRepository.findByAssignedToIdAndStatus(u.getId(), TaskStatus.COMPLETED).stream()
-                        .map(Task::getBudget)
-                        .reduce(BigDecimal.ZERO, BigDecimal::add)
-                        .doubleValue())
-                .average().orElse(0.0);
-
-        double avgTasks = freelancers.stream()
-                .mapToDouble(u -> taskRepository.findByAssignedToIdAndStatus(u.getId(), TaskStatus.COMPLETED).size())
-                .average().orElse(0.0);
+        double avgRating = ratings.values().stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+        double avgEarnings = freelancers.stream().mapToDouble(user -> {
+            Object[] stats = taskStats.get(user.getId());
+            return stats == null ? 0.0 : ((BigDecimal) stats[2]).doubleValue();
+        }).average().orElse(0.0);
+        double avgTasks = freelancers.stream().mapToDouble(user -> {
+            Object[] stats = taskStats.get(user.getId());
+            return stats == null ? 0.0 : ((Number) stats[1]).doubleValue();
+        }).average().orElse(0.0);
 
         return FreelancerMetrics.builder()
                 .totalFreelancers(totalFreelancers)

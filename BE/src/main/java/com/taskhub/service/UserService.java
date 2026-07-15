@@ -8,6 +8,7 @@ import com.taskhub.dto.response.AdminDashboardResponse;
 import com.taskhub.dto.response.AuthResponse;
 import com.taskhub.dto.response.UserProfileResponse;
 import com.taskhub.entity.Task;
+import com.taskhub.entity.RefreshToken;
 import com.taskhub.entity.User;
 import com.taskhub.enums.ReviewType;
 import com.taskhub.enums.Role;
@@ -17,17 +18,21 @@ import com.taskhub.repository.RefreshTokenRepository;
 import com.taskhub.repository.ReviewRepository;
 import com.taskhub.repository.TaskRepository;
 import com.taskhub.repository.UserRepository;
+import com.taskhub.repository.TaskApplicationRepository;
+import com.taskhub.util.TokenHasher;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.Period;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
@@ -40,11 +45,27 @@ public class UserService {
     private final RefreshTokenRepository refreshTokenRepository;
     private final AuditService auditService;
     private final com.taskhub.security.JwtService jwtService;
+    private final TaskApplicationRepository taskApplicationRepository;
+
+    private static final List<TaskStatus> ACTIVE_OBLIGATION_STATUSES = List.of(
+            TaskStatus.DRAFT,
+            TaskStatus.LOCKED,
+            TaskStatus.ESCROW_FUNDED,
+            TaskStatus.ACTIVE,
+            TaskStatus.IN_PROGRESS,
+            TaskStatus.SUBMITTED,
+            TaskStatus.DISPUTED,
+            TaskStatus.REMOVAL_REQUESTED
+    );
 
     public UserProfileResponse getProfile(Long userId) {
-        User user = userRepository.findById(userId)
+        userRepository.findById(userId)
                 .orElseThrow(() -> TaskHubException.notFound("User not found"));
-        return buildProfile(userId);
+        Object principal = SecurityContextHolder.getContext().getAuthentication() == null
+                ? null : SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        boolean includeSensitive = principal instanceof User current
+                && (current.getId().equals(userId) || current.getRole() == Role.ADMIN);
+        return buildProfile(userId, includeSensitive);
     }
 
     /**
@@ -53,22 +74,33 @@ public class UserService {
      */
     @Transactional
     public AuthResponse switchRoleAndReturnToken(Long userId) {
-        User user = userRepository.findById(userId)
+        User user = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> TaskHubException.notFound("User not found"));
 
         Role current = user.getRole();
         if (current == Role.ADMIN) {
             throw TaskHubException.badRequest("Admin account cannot switch roles");
         }
+        requireRoleSwitchAllowed(userId);
         Role target = (current == Role.HIRER) ? Role.STUDENT : Role.HIRER;
         user.setRole(target);
         user = userRepository.save(user);
+        refreshTokenRepository.revokeAllByUserId(userId);
+
+        String rawRefreshToken = TokenHasher.randomToken();
+        refreshTokenRepository.save(RefreshToken.builder()
+                .userId(userId)
+                .tokenHash(TokenHasher.sha256(rawRefreshToken))
+                .expiresAt(LocalDateTime.now().plusSeconds(jwtService.getRefreshExpirationMs() / 1000))
+                .revoked(false)
+                .build());
         auditService.record("ROLE_SWITCH", user.getEmail(), "Switched from " + current + " to " + target);
 
         String newToken = jwtService.generateAccessToken(user.getId(), user.getEmail(), target.name());
-        UserProfileResponse profile = buildProfile(user.getId());
         return AuthResponse.builder()
                 .token(newToken)
+                .refreshToken(rawRefreshToken)
+                .expiresIn(jwtService.getAccessExpirationMs() / 1000)
                 .userId(user.getId())
                 .email(user.getEmail())
                 .fullName(user.getFullName())
@@ -128,7 +160,7 @@ public class UserService {
 
         userRepository.save(user);
         auditService.record("PROFILE_UPDATE", user.getEmail(), "Profile updated");
-        return buildProfile(userId);
+        return buildProfile(userId, true);
     }
 
     @Transactional
@@ -139,7 +171,7 @@ public class UserService {
         user.setAvailability(available ? "Sẵn sàng" : "Không sẵn sàng");
         userRepository.save(user);
         auditService.record("PROFILE_UPDATE", user.getEmail(), "Availability updated");
-        return buildProfile(userId);
+        return buildProfile(userId, true);
     }
 
     @Transactional
@@ -208,42 +240,51 @@ public class UserService {
 
     @Transactional
     public UserProfileResponse switchRole(Long userId) {
-        User user = userRepository.findById(userId)
+        User user = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> TaskHubException.notFound("User not found"));
 
         Role current = user.getRole();
         if (current == Role.ADMIN) {
             throw TaskHubException.badRequest("Admin account cannot switch roles");
         }
+        requireRoleSwitchAllowed(userId);
         Role target = (current == Role.HIRER) ? Role.STUDENT : Role.HIRER;
         user.setRole(target);
         user = userRepository.save(user);
+        refreshTokenRepository.revokeAllByUserId(userId);
         auditService.record("ROLE_SWITCH", user.getEmail(), "Switched from " + current + " to " + target);
-        return buildProfile(user.getId());
+        return buildProfile(user.getId(), true);
     }
 
     @Transactional
     public UserProfileResponse changeUserRole(Long userId, Role newRole) {
-        User user = userRepository.findById(userId)
+        User user = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> TaskHubException.notFound("User not found"));
+        if (user.getRole() != newRole) {
+            requireRoleSwitchAllowed(userId);
+        }
         user.setRole(newRole);
         user = userRepository.save(user);
-        return buildProfile(user.getId());
+        refreshTokenRepository.revokeAllByUserId(userId);
+        return buildProfile(user.getId(), true);
     }
 
     @Transactional
     public void setUserBanned(Long userId, boolean banned) {
-        User user = userRepository.findById(userId)
+        User user = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> TaskHubException.notFound("User not found"));
         user.setIsBanned(banned);
         userRepository.save(user);
+        if (banned) {
+            refreshTokenRepository.revokeAllByUserId(userId);
+        }
     }
 
     // ── Helpers ─────────────────────────────────────────────────
 
     private PageResponse<UserProfileResponse> toPageResponse(Page<User> page) {
         return PageResponse.<UserProfileResponse>builder()
-                .content(page.getContent().stream().map(u -> buildProfile(u.getId())).toList())
+                .content(page.getContent().stream().map(u -> buildProfile(u.getId(), true)).toList())
                 .page(page.getNumber()).size(page.getSize())
                 .totalElements(page.getTotalElements()).totalPages(page.getTotalPages())
                 .first(page.isFirst()).last(page.isLast())
@@ -251,14 +292,14 @@ public class UserService {
                 .build();
     }
 
-    private UserProfileResponse buildProfile(Long userId) {
+    private UserProfileResponse buildProfile(Long userId, boolean includeSensitive) {
         User user = userRepository.findById(userId).orElse(null);
         if (user == null) return null;
 
-        Double avgFreelancer = reviewRepository.getAverageRating(userId, ReviewType.FREELANCER_TO_HIRER);
-        Double avgHirer = reviewRepository.getAverageRating(userId, ReviewType.HIRER_TO_FREELANCER);
-        long reviewsFreelancer = reviewRepository.countByRevieweeIdAndType(userId, ReviewType.FREELANCER_TO_HIRER);
-        long reviewsHirer = reviewRepository.countByRevieweeIdAndType(userId, ReviewType.HIRER_TO_FREELANCER);
+        Double avgFreelancer = reviewRepository.getAverageRating(userId, ReviewType.HIRER_TO_FREELANCER);
+        Double avgHirer = reviewRepository.getAverageRating(userId, ReviewType.FREELANCER_TO_HIRER);
+        long reviewsFreelancer = reviewRepository.countByRevieweeIdAndType(userId, ReviewType.HIRER_TO_FREELANCER);
+        long reviewsHirer = reviewRepository.countByRevieweeIdAndType(userId, ReviewType.FREELANCER_TO_HIRER);
 
         BigDecimal totalEarnings = taskRepository.findByAssignedToIdAndStatus(userId, TaskStatus.COMPLETED).stream()
                 .map(Task::getBudget).reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -266,28 +307,28 @@ public class UserService {
         long completedHirer = taskRepository.findByHirerIdAndStatus(userId, TaskStatus.COMPLETED).size();
 
         return UserProfileResponse.builder()
-                .id(user.getId()).email(user.getEmail()).fullName(user.getFullName())
+                .id(user.getId()).email(includeSensitive ? user.getEmail() : null).fullName(user.getFullName())
                 .university(user.getUniversity()).major(user.getMajor())
                 .bio(user.getBio()).skills(user.getSkills()).experience(user.getExperience())
-                .portfolioUrl(user.getPortfolioUrl()).phone(user.getPhone())
+                .portfolioUrl(user.getPortfolioUrl()).phone(includeSensitive ? user.getPhone() : null)
                 .title(user.getTitle()).hourlyRate(user.getHourlyRate())
                 .availability(user.getAvailability()).languages(user.getLanguages())
                 .certifications(user.getCertifications()).avatarUrl(user.getAvatarUrl())
                 .role(user.getRole().name()).roleEnum(user.getRole())
-                .walletBalance(user.getWalletBalance())
+                .walletBalance(includeSensitive ? user.getWalletBalance() : null)
                 .isVerified(user.getIsVerified()).isAvailable(user.getIsAvailable())
-                .isBanned(user.getIsBanned())
-                .dateOfBirth(user.getDateOfBirth())
+                .isBanned(includeSensitive ? user.getIsBanned() : null)
+                .dateOfBirth(includeSensitive ? user.getDateOfBirth() : null)
                 .age(user.getDateOfBirth() != null
                         ? Period.between(user.getDateOfBirth(), LocalDate.now()).getYears()
                         : null)
                 .averageRatingAsFreelancer(avgFreelancer != null ? Math.round(avgFreelancer * 10.0) / 10.0 : null)
                 .averageRatingAsHirer(avgHirer != null ? Math.round(avgHirer * 10.0) / 10.0 : null)
                 .totalReviewsAsFreelancer(reviewsFreelancer).totalReviewsAsHirer(reviewsHirer)
-                .totalEarnings(totalEarnings)
+                .totalEarnings(includeSensitive ? totalEarnings : null)
                 .completedTasksAsFreelancer(completedFreelancer).completedTasksAsHirer(completedHirer)
                 .memberSince(user.getCreatedAt() != null ? user.getCreatedAt().toLocalDate().toString() : null)
-                .emailVerified(user.isEmailVerified())
+                .emailVerified(includeSensitive && user.isEmailVerified())
                 .createdAt(user.getCreatedAt())
                 .build();
     }
@@ -296,6 +337,19 @@ public class UserService {
         if (value == null) return null;
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private void requireRoleSwitchAllowed(Long userId) {
+        boolean ownsActiveTask = taskRepository.existsByHirerIdAndStatusIn(
+                userId, ACTIVE_OBLIGATION_STATUSES);
+        boolean worksOnActiveTask = taskRepository.existsByAssignedToIdAndStatusIn(
+                userId, ACTIVE_OBLIGATION_STATUSES);
+        boolean hasPendingApplication = taskApplicationRepository.existsByStudentIdAndStatus(
+                userId, com.taskhub.enums.ApplicationStatus.PENDING);
+        if (ownsActiveTask || worksOnActiveTask || hasPendingApplication) {
+            throw TaskHubException.badRequest(
+                    "Cannot switch role while tasks or applications are still active");
+        }
     }
 
     private List<String> cleanList(List<String> values) {

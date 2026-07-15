@@ -16,7 +16,6 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import java.math.BigDecimal;
 import java.util.List;
 
 @Service
@@ -122,22 +121,16 @@ public class ReviewService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> TaskHubException.notFound("User not found"));
 
-        Double avgFreelancer = reviewRepository.getAverageRating(userId, ReviewType.FREELANCER_TO_HIRER);
-        Double avgHirer = reviewRepository.getAverageRating(userId, ReviewType.HIRER_TO_FREELANCER);
-        long reviewsFreelancer = reviewRepository.countByRevieweeIdAndType(userId, ReviewType.FREELANCER_TO_HIRER);
-        long reviewsHirer = reviewRepository.countByRevieweeIdAndType(userId, ReviewType.HIRER_TO_FREELANCER);
-        long fiveStar = reviewRepository.countFiveStars(userId, ReviewType.FREELANCER_TO_HIRER);
-
-        BigDecimal totalEarnings = taskRepository.findByAssignedToIdAndStatus(userId, TaskStatus.COMPLETED).stream()
-                .map(Task::getBudget)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        Double avgFreelancer = reviewRepository.getAverageRating(userId, ReviewType.HIRER_TO_FREELANCER);
+        Double avgHirer = reviewRepository.getAverageRating(userId, ReviewType.FREELANCER_TO_HIRER);
+        long reviewsFreelancer = reviewRepository.countByRevieweeIdAndType(userId, ReviewType.HIRER_TO_FREELANCER);
+        long reviewsHirer = reviewRepository.countByRevieweeIdAndType(userId, ReviewType.FREELANCER_TO_HIRER);
 
         long completedFreelancer = taskRepository.findByAssignedToIdAndStatus(userId, TaskStatus.COMPLETED).size();
         long completedHirer = taskRepository.findByHirerIdAndStatus(userId, TaskStatus.COMPLETED).size();
 
         return UserProfileResponse.builder()
                 .id(user.getId())
-                .email(user.getEmail())
                 .fullName(user.getFullName())
                 .university(user.getUniversity())
                 .major(user.getMajor())
@@ -145,7 +138,6 @@ public class ReviewService {
                 .skills(user.getSkills())
                 .experience(user.getExperience())
                 .portfolioUrl(user.getPortfolioUrl())
-                .phone(user.getPhone())
                 .title(user.getTitle())
                 .hourlyRate(user.getHourlyRate())
                 .availability(user.getAvailability())
@@ -154,20 +146,15 @@ public class ReviewService {
                 .avatarUrl(user.getAvatarUrl())
                 .role(user.getRole().name())
                 .roleEnum(user.getRole())
-                .walletBalance(user.getWalletBalance())
                 .isVerified(user.getIsVerified())
                 .isAvailable(user.getIsAvailable())
-                .isBanned(user.getIsBanned())
-                .dateOfBirth(user.getDateOfBirth())
                 .averageRatingAsFreelancer(avgFreelancer != null ? Math.round(avgFreelancer * 10.0) / 10.0 : null)
                 .averageRatingAsHirer(avgHirer != null ? Math.round(avgHirer * 10.0) / 10.0 : null)
                 .totalReviewsAsFreelancer(reviewsFreelancer)
                 .totalReviewsAsHirer(reviewsHirer)
-                .totalEarnings(totalEarnings)
                 .completedTasksAsFreelancer(completedFreelancer)
                 .completedTasksAsHirer(completedHirer)
                 .memberSince(user.getCreatedAt() != null ? user.getCreatedAt().toLocalDate().toString() : null)
-                .emailVerified(user.isEmailVerified())
                 .createdAt(user.getCreatedAt())
                 .build();
     }

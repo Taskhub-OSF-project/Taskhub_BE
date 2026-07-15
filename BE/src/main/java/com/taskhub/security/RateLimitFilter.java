@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * IP-based rate limiting for sensitive auth endpoints using Bucket4j token buckets.
@@ -29,16 +30,14 @@ public class RateLimitFilter extends OncePerRequestFilter {
     private final RateLimitProperties rateLimitProperties;
     private final ObjectMapper objectMapper;
 
-    private final Map<String, Bucket> loginBuckets = new ConcurrentHashMap<>();
-    private final Map<String, Bucket> forgotPasswordBuckets = new ConcurrentHashMap<>();
-    private final Map<String, Bucket> refreshBuckets = new ConcurrentHashMap<>();
+    private final Map<String, TimedBucket> buckets = new ConcurrentHashMap<>();
+    private final AtomicLong requestCounter = new AtomicLong();
+    private static final long IDLE_EVICTION_MILLIS = Duration.ofHours(2).toMillis();
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getRequestURI();
-        return !path.equals("/api/auth/login")
-                && !path.equals("/api/auth/forgot-password")
-                && !path.equals("/api/auth/refresh");
+        return resolveLimit(path) == null;
     }
 
     @Override
@@ -47,17 +46,25 @@ public class RateLimitFilter extends OncePerRequestFilter {
         String clientIp = resolveClientIp(request);
         String path = request.getRequestURI();
 
-        Bucket bucket = switch (path) {
-            case "/api/auth/login" -> loginBuckets.computeIfAbsent(clientIp, k -> newBucket(
-                    rateLimitProperties.getLoginPerMinute(), Duration.ofMinutes(1)));
-            case "/api/auth/forgot-password" -> forgotPasswordBuckets.computeIfAbsent(clientIp, k -> newBucket(
-                    rateLimitProperties.getForgotPasswordPerHour(), Duration.ofHours(1)));
-            case "/api/auth/refresh" -> refreshBuckets.computeIfAbsent(clientIp, k -> newBucket(
-                    rateLimitProperties.getRefreshPerMinute(), Duration.ofMinutes(1)));
-            default -> null;
-        };
+        Limit limit = resolveLimit(path);
+        if (limit == null) {
+            chain.doFilter(request, response);
+            return;
+        }
+        long now = System.currentTimeMillis();
+        String key = path + ':' + clientIp;
+        TimedBucket timed = buckets.compute(key, (ignored, existing) -> {
+            if (existing == null) {
+                return new TimedBucket(newBucket(limit.capacity(), limit.period()), now);
+            }
+            existing.lastAccessMillis = now;
+            return existing;
+        });
+        if ((requestCounter.incrementAndGet() & 255) == 0) {
+            buckets.entrySet().removeIf(entry -> now - entry.getValue().lastAccessMillis > IDLE_EVICTION_MILLIS);
+        }
 
-        if (bucket != null && !bucket.tryConsume(1)) {
+        if (!timed.bucket.tryConsume(1)) {
             response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
             response.setContentType(MediaType.APPLICATION_JSON_VALUE);
             objectMapper.writeValue(response.getWriter(),
@@ -66,6 +73,21 @@ public class RateLimitFilter extends OncePerRequestFilter {
         }
 
         chain.doFilter(request, response);
+    }
+
+    private Limit resolveLimit(String path) {
+        return switch (path) {
+            case "/api/auth/login" -> new Limit(rateLimitProperties.getLoginPerMinute(), Duration.ofMinutes(1));
+            case "/api/auth/refresh" -> new Limit(rateLimitProperties.getRefreshPerMinute(), Duration.ofMinutes(1));
+            case "/api/auth/register" -> new Limit(rateLimitProperties.getRegisterPerHour(), Duration.ofHours(1));
+            case "/api/auth/forgot-password", "/api/auth/recover-account",
+                 "/api/auth/recover-password/request", "/api/auth/recover-password/confirm",
+                 "/api/auth/reset-password" -> new Limit(rateLimitProperties.getRecoveryPerHour(), Duration.ofHours(1));
+            case "/api/ai/public/chat" -> new Limit(rateLimitProperties.getPublicAiPerMinute(), Duration.ofMinutes(1));
+            default -> path.startsWith("/api/ai/")
+                    ? new Limit(rateLimitProperties.getAiPerMinute(), Duration.ofMinutes(1))
+                    : null;
+        };
     }
 
     private static Bucket newBucket(int capacity, Duration period) {
@@ -82,5 +104,17 @@ public class RateLimitFilter extends OncePerRequestFilter {
             return forwarded.split(",")[0].trim();
         }
         return request.getRemoteAddr();
+    }
+
+    private record Limit(int capacity, Duration period) {}
+
+    private static final class TimedBucket {
+        private final Bucket bucket;
+        private volatile long lastAccessMillis;
+
+        private TimedBucket(Bucket bucket, long lastAccessMillis) {
+            this.bucket = bucket;
+            this.lastAccessMillis = lastAccessMillis;
+        }
     }
 }

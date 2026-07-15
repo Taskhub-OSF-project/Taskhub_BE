@@ -16,6 +16,7 @@ import com.taskhub.security.AuthUtil;
 import com.taskhub.util.EscrowCalculator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.List;
@@ -30,11 +31,17 @@ public class WalletService {
     private final UserRepository userRepository;
     private final WalletTransactionRepository walletTransactionRepository;
 
+    @Value("${app.wallet.cash-simulation-enabled:false}")
+    private boolean cashSimulationEnabled;
+
     /**
      * Lấy số dư ví của user hiện tại.
      */
     public WalletResponse getBalance() {
-        return new WalletResponse(AuthUtil.getCurrentUser().getWalletBalance());
+        Long userId = AuthUtil.getCurrentUser().getId();
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> TaskHubException.notFound("User not found"));
+        return new WalletResponse(user.getWalletBalance());
     }
 
     /**
@@ -102,9 +109,14 @@ public class WalletService {
      */
     @Transactional
     public WalletResponse deposit(BigDecimal amount) {
+        if (!cashSimulationEnabled)
+            throw TaskHubException.forbidden("Direct wallet deposits are disabled; use a payment provider");
+        if (amount == null)
+            throw TaskHubException.badRequest("Amount is required");
         if (amount.compareTo(BigDecimal.ZERO) <= 0)
-            throw new IllegalArgumentException("Amount must be positive");
-        User user = AuthUtil.getCurrentUser();
+            throw TaskHubException.badRequest("Amount must be positive");
+        User user = userRepository.findByIdForUpdate(AuthUtil.getCurrentUser().getId())
+                .orElseThrow(() -> TaskHubException.notFound("User not found"));
         user.setWalletBalance(user.getWalletBalance().add(amount));
         userRepository.save(user);
         recordTransaction(user, WalletTransactionType.top_up, amount, null);
@@ -116,9 +128,14 @@ public class WalletService {
      */
     @Transactional
     public WalletResponse withdraw(BigDecimal amount) {
+        if (!cashSimulationEnabled)
+            throw TaskHubException.forbidden("Direct wallet withdrawals are disabled; use a payment provider");
+        if (amount == null)
+            throw TaskHubException.badRequest("Amount is required");
         if (amount.compareTo(BigDecimal.ZERO) <= 0)
             throw TaskHubException.badRequest("Amount must be positive");
-        User user = AuthUtil.getCurrentUser();
+        User user = userRepository.findByIdForUpdate(AuthUtil.getCurrentUser().getId())
+                .orElseThrow(() -> TaskHubException.notFound("User not found"));
         if (user.getWalletBalance().compareTo(amount) < 0) {
             throw TaskHubException.badRequest("Số dư ví không đủ để rút");
         }

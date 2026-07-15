@@ -15,10 +15,16 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.Arrays;
+import java.util.stream.Collectors;
 
 public class StreamLambdaHandler implements RequestStreamHandler {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static volatile SpringBootLambdaContainerHandler<AwsProxyRequest, AwsProxyResponse> handler;
+    private static final Set<String> ALLOWED_ORIGINS = Arrays.stream(
+                    System.getenv().getOrDefault("APP_CORS_ALLOWED_ORIGINS", "http://localhost:5173").split(","))
+            .map(String::trim).filter(value -> !value.isBlank()).collect(Collectors.toUnmodifiableSet());
 
     @Override
     public void handleRequest(InputStream inputStream, OutputStream outputStream, Context context) throws IOException {
@@ -122,16 +128,20 @@ public class StreamLambdaHandler implements RequestStreamHandler {
 
     private Map<String, String> corsHeaders(AwsProxyRequest request) {
         Map<String, String> headers = new LinkedHashMap<>();
-        headers.put("Access-Control-Allow-Origin", allowedOrigin(request));
+        String origin = headerValue(request, "Origin");
+        if (isOriginAllowed(origin)) {
+            headers.put("Access-Control-Allow-Origin", origin);
+            headers.put("Access-Control-Allow-Credentials", "true");
+        }
+        headers.put("Vary", "Origin");
         headers.put("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
         headers.put("Access-Control-Allow-Headers", "Content-Type,Authorization,X-Requested-With,Accept,Origin");
         headers.put("Access-Control-Max-Age", "86400");
         return headers;
     }
 
-    private String allowedOrigin(AwsProxyRequest request) {
-        String origin = headerValue(request, "Origin");
-        return origin == null || origin.isBlank() ? "*" : origin;
+    static boolean isOriginAllowed(String origin) {
+        return origin != null && ALLOWED_ORIGINS.contains(origin.trim());
     }
 
     private String headerValue(AwsProxyRequest request, String name) {

@@ -53,7 +53,9 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             if (jwtService.validateToken(token)
                     && JwtService.TYPE_ACCESS.equals(jwtService.getTokenType(token))) {
                 Long userId = jwtService.getUserIdFromToken(token);
-                userRepository.findById(userId).ifPresent(user -> {
+                userRepository.findById(userId)
+                        .filter(user -> !Boolean.TRUE.equals(user.getIsBanned()))
+                        .ifPresent(user -> {
                     var auth = new UsernamePasswordAuthenticationToken(
                             user,
                             null,

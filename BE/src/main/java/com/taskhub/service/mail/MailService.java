@@ -7,6 +7,8 @@ package com.taskhub.service.mail;
  */
 public interface MailService {
 
+    boolean isDeliveryEnabled();
+
     /**
      * Gửi link đặt lại mật khẩu.
      *

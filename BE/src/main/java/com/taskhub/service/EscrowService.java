@@ -13,6 +13,7 @@ import com.taskhub.repository.EscrowRepository;
 import com.taskhub.repository.TaskRepository;
 import com.taskhub.repository.UserRepository;
 import com.taskhub.repository.TaskApplicationRepository;
+import com.taskhub.repository.MilestoneRepository;
 import com.taskhub.security.AuthUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -20,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.taskhub.util.EscrowCalculator;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 /**
  * Service xử lý nghiệp vụ escrow (fund/release/refund).
@@ -35,15 +37,23 @@ public class EscrowService {
     private final TaskService taskService;
     private final WalletService walletService;
     private final TaskApplicationRepository appRepository;
+    private final MilestoneRepository milestoneRepository;
 
     /**
      * Kiểm tra escrow của task có đang ở trạng thái FUNDED hay không.
      */
     @Transactional(readOnly = true)
     public boolean isEscrowFunded(Long taskId) {
-        return escrowRepository.findByTaskId(taskId)
+        boolean taskEscrowFunded = escrowRepository.findByTaskId(taskId)
                 .map(escrow -> escrow.getStatus() == EscrowStatus.FUNDED)
-                .orElse(true);
+                .orElse(false);
+        if (taskEscrowFunded) {
+            return true;
+        }
+        var milestones = milestoneRepository.findByTaskIdOrderByDisplayOrder(taskId);
+        return !milestones.isEmpty()
+                && milestones.stream().allMatch(m -> m.getEscrowStatus() == EscrowStatus.FUNDED
+                        || m.getEscrowStatus() == EscrowStatus.RELEASED);
     }
 
     /**
@@ -57,10 +67,22 @@ public class EscrowService {
         if (hirer.getRole() != Role.HIRER)
             throw TaskHubException.forbidden("Only hirers can fund escrow");
 
-        Task task = taskService.findTask(taskId);
+        Task task = taskRepository.findByIdForUpdate(taskId)
+                .orElseThrow(() -> TaskHubException.notFound("Task not found"));
         if (!task.getHirer().getId().equals(hirer.getId()))
             throw TaskHubException.forbidden("Not your task");
         taskService.validateTransition(task, TaskStatus.ESCROW_FUNDED);
+        if (!milestoneRepository.findByTaskIdOrderByDisplayOrder(taskId).isEmpty()) {
+            throw TaskHubException.badRequest("Task escrow and milestone escrow are mutually exclusive");
+        }
+
+        Escrow escrow = escrowRepository.findByTaskIdForUpdate(taskId)
+                .orElseGet(() -> Escrow.builder().task(task).build());
+        if (escrow.getStatus() == EscrowStatus.FUNDED)
+            throw TaskHubException.badRequest("Escrow already funded");
+
+        hirer = userRepository.findByIdForUpdate(hirer.getId())
+                .orElseThrow(() -> TaskHubException.notFound("User not found"));
 
         BigDecimal platformFee = EscrowCalculator.platformFee(task.getBudget());
         BigDecimal totalDeduction = EscrowCalculator.totalEscrowDeduction(task.getBudget());
@@ -75,10 +97,6 @@ public class EscrowService {
         userRepository.save(hirer);
         walletService.recordTransaction(hirer, WalletTransactionType.escrow_deduction, totalDeduction.negate(), task);
 
-        Escrow escrow = escrowRepository.findByTaskId(taskId)
-                .orElseGet(() -> Escrow.builder().task(task).build());
-        if (escrow.getStatus() == EscrowStatus.FUNDED)
-            throw TaskHubException.badRequest("Escrow already funded");
         escrow.setAmount(task.getBudget());
         escrow.setPlatformFee(platformFee);
         escrow.setStatus(EscrowStatus.FUNDED);
@@ -93,16 +111,22 @@ public class EscrowService {
      */
     @Transactional
     public void releaseEscrow(Long taskId) {
-        // Keep task completion and wallet release on the same path.
-        User hirer = AuthUtil.getCurrentUser();
-        if (hirer.getRole() != Role.HIRER)
-            throw TaskHubException.forbidden("Only hirers can release escrow");
+        User actor = AuthUtil.getCurrentUser();
+        if (actor.getRole() != Role.HIRER && actor.getRole() != Role.ADMIN)
+            throw TaskHubException.forbidden("Only the task owner or an admin can release escrow");
 
-        Task task = taskService.findTask(taskId);
-        if (!task.getHirer().getId().equals(hirer.getId()))
+        Task task = taskRepository.findByIdForUpdate(taskId)
+                .orElseThrow(() -> TaskHubException.notFound("Task not found"));
+        if (actor.getRole() != Role.ADMIN && !task.getHirer().getId().equals(actor.getId()))
             throw TaskHubException.forbidden("Not your task");
 
-        Escrow escrow = escrowRepository.findByTaskId(taskId)
+        var milestones = milestoneRepository.findByTaskIdOrderByDisplayOrder(taskId);
+        if (!milestones.isEmpty()) {
+            releaseMilestoneEscrow(task, milestones);
+            return;
+        }
+
+        Escrow escrow = escrowRepository.findByTaskIdForUpdate(taskId)
                 .orElseThrow(() -> TaskHubException.notFound("Escrow not found"));
         if (escrow.getStatus() == EscrowStatus.RELEASED)
             return;
@@ -117,9 +141,11 @@ public class EscrowService {
             throw TaskHubException.badRequest("Task must be SUBMITTED, DISPUTED or COMPLETED to release escrow");
         }
 
-        User student = task.getAssignedTo();
-        if (student == null)
+        User assignedStudent = task.getAssignedTo();
+        if (assignedStudent == null)
             throw TaskHubException.badRequest("Task has no assigned student");
+        User student = userRepository.findByIdForUpdate(assignedStudent.getId())
+                .orElseThrow(() -> TaskHubException.notFound("Assigned student not found"));
 
         // Cộng tiền cho student và ghi ledger escrow_release.
         student.setWalletBalance(student.getWalletBalance().add(escrow.getAmount()));
@@ -136,27 +162,43 @@ public class EscrowService {
      */
     @Transactional
     public void refundEscrow(Long taskId) {
-        User hirer = AuthUtil.getCurrentUser();
-        if (hirer.getRole() != Role.HIRER)
-            throw TaskHubException.forbidden("Only hirers can refund escrow");
-
-        Task task = taskService.findTask(taskId);
-        if (!task.getHirer().getId().equals(hirer.getId()))
+        User actor = AuthUtil.getCurrentUser();
+        Task task = taskRepository.findByIdForUpdate(taskId)
+                .orElseThrow(() -> TaskHubException.notFound("Task not found"));
+        boolean isAdmin = actor.getRole() == Role.ADMIN;
+        boolean isOwner = actor.getRole() == Role.HIRER
+                && task.getHirer().getId().equals(actor.getId());
+        if (!isAdmin && !isOwner)
             throw TaskHubException.forbidden("Not your task");
         taskService.validateTransition(task, TaskStatus.LOCKED);
 
-        Escrow escrow = escrowRepository.findByTaskId(taskId)
-                .orElseThrow(() -> TaskHubException.notFound("Escrow not found"));
-        if (escrow.getStatus() != EscrowStatus.FUNDED)
-            throw TaskHubException.badRequest("Escrow not in FUNDED state");
+        User hirer = userRepository.findByIdForUpdate(task.getHirer().getId())
+                .orElseThrow(() -> TaskHubException.notFound("Task owner not found"));
+        BigDecimal refundAmount;
+        var milestones = milestoneRepository.findByTaskIdOrderByDisplayOrder(taskId);
+        var fundedMilestones = milestones.stream()
+                .filter(m -> m.getEscrowStatus() == EscrowStatus.FUNDED)
+                .toList();
+        if (!fundedMilestones.isEmpty()) {
+            refundAmount = fundedMilestones.stream()
+                    .map(m -> EscrowCalculator.totalEscrowDeduction(m.getAmount()))
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            fundedMilestones.forEach(m -> m.setEscrowStatus(EscrowStatus.REFUNDED));
+            milestoneRepository.saveAll(fundedMilestones);
+        } else {
+            Escrow escrow = escrowRepository.findByTaskIdForUpdate(taskId)
+                    .orElseThrow(() -> TaskHubException.notFound("Escrow not found"));
+            if (escrow.getStatus() != EscrowStatus.FUNDED)
+                throw TaskHubException.badRequest("Escrow not in FUNDED state");
+            refundAmount = escrow.getAmount().add(escrow.getPlatformFee());
+            escrow.setStatus(EscrowStatus.REFUNDED);
+            escrowRepository.save(escrow);
+        }
 
         // Trả lại tiền cho hirer và ghi ledger refund.
-        hirer.setWalletBalance(hirer.getWalletBalance().add(escrow.getAmount()));
+        hirer.setWalletBalance(hirer.getWalletBalance().add(refundAmount));
         userRepository.save(hirer);
-        walletService.recordTransaction(hirer, WalletTransactionType.refund, escrow.getAmount(), task);
-
-        escrow.setStatus(EscrowStatus.REFUNDED);
-        escrowRepository.save(escrow);
+        walletService.recordTransaction(hirer, WalletTransactionType.refund, refundAmount, task);
 
         // Reset assignee và criteria khi hoàn tiền.
         task.setAssignedTo(null);
@@ -180,13 +222,12 @@ public class EscrowService {
      */
     @Transactional
     public void resolveDisputeToRevision(Long taskId) {
-        Task task = taskService.findTask(taskId);
+        Task task = taskRepository.findByIdForUpdate(taskId)
+                .orElseThrow(() -> TaskHubException.notFound("Task not found"));
         if (task.getStatus() != TaskStatus.DISPUTED)
             throw TaskHubException.badRequest("Task must be DISPUTED to request revision");
 
-        Escrow escrow = escrowRepository.findByTaskId(taskId)
-                .orElseThrow(() -> TaskHubException.notFound("Escrow not found"));
-        if (escrow.getStatus() != EscrowStatus.FUNDED)
+        if (!isEscrowFunded(taskId))
             throw TaskHubException.badRequest("Escrow not in FUNDED state");
 
         // Giữ assignedTo, reset AI result + precheck để student có thể precheck lại
@@ -198,6 +239,54 @@ public class EscrowService {
 
         // Task → IN_PROGRESS (student vẫn được assign, escrow vẫn FUNDED)
         taskService.transition(task, TaskStatus.IN_PROGRESS);
+        taskRepository.save(task);
+    }
+
+    private void releaseMilestoneEscrow(Task task, java.util.List<com.taskhub.entity.Milestone> milestones) {
+        if (task.getStatus() != TaskStatus.SUBMITTED
+                && task.getStatus() != TaskStatus.DISPUTED
+                && task.getStatus() != TaskStatus.COMPLETED) {
+            throw TaskHubException.badRequest("Task must be SUBMITTED, DISPUTED or COMPLETED to release escrow");
+        }
+
+        var funded = milestones.stream()
+                .filter(m -> m.getEscrowStatus() == EscrowStatus.FUNDED)
+                .toList();
+        if (funded.isEmpty()) {
+            if (milestones.stream().allMatch(m -> m.getEscrowStatus() == EscrowStatus.RELEASED)) {
+                return;
+            }
+            throw TaskHubException.badRequest("All milestone escrows must be funded before release");
+        }
+        if (funded.size() != milestones.stream()
+                .filter(m -> m.getEscrowStatus() != EscrowStatus.RELEASED).count()) {
+            throw TaskHubException.badRequest("Milestone escrow states are inconsistent");
+        }
+
+        User assignedStudent = task.getAssignedTo();
+        if (assignedStudent == null) {
+            throw TaskHubException.badRequest("Task has no assigned student");
+        }
+        User student = userRepository.findByIdForUpdate(assignedStudent.getId())
+                .orElseThrow(() -> TaskHubException.notFound("Assigned student not found"));
+        BigDecimal releaseAmount = funded.stream()
+                .map(com.taskhub.entity.Milestone::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        funded.forEach(m -> {
+            m.setEscrowStatus(EscrowStatus.RELEASED);
+            m.setStatus(com.taskhub.entity.Milestone.MilestoneStatus.APPROVED);
+            m.setReleasedAt(LocalDateTime.now());
+        });
+        milestoneRepository.saveAll(funded);
+        student.setWalletBalance(student.getWalletBalance().add(releaseAmount));
+        userRepository.save(student);
+        walletService.recordTransaction(student, WalletTransactionType.escrow_release, releaseAmount, task);
+
+        task.getAcceptanceCriteria().forEach(c -> c.setStatus(CriteriaStatus.PASSED));
+        if (task.getStatus() != TaskStatus.COMPLETED) {
+            taskService.transition(task, TaskStatus.COMPLETED);
+        }
         taskRepository.save(task);
     }
 

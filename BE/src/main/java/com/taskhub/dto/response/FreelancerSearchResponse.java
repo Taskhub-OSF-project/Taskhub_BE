@@ -7,7 +7,6 @@ import java.util.List;
 public class FreelancerSearchResponse {
     private Long id;
     private String fullName;
-    private String email;
     private String university;
     private String major;
     private String bio;

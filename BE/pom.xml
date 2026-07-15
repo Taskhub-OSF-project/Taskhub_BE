@@ -18,6 +18,8 @@
         <jjwt.version>0.12.5</jjwt.version>
         <aws.serverless.java.container.version>2.1.5</aws.serverless.java.container.version>
         <aws.lambda.java.core.version>1.4.0</aws.lambda.java.core.version>
+        <aws.sdk.version>2.47.3</aws.sdk.version>
+        <flyway.version>10.12.0</flyway.version>
         <!-- Required when IDE uses JDK 23/24 (fixes javac TypeTag :: UNKNOWN with Lombok) -->
         <lombok.version>1.18.38</lombok.version>
     </properties>
@@ -54,6 +56,41 @@
             <artifactId>aws-lambda-java-core</artifactId>
             <version>${aws.lambda.java.core.version}</version>
         </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>bedrockruntime</artifactId>
+            <version>${aws.sdk.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>apache5-client</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>netty-nio-client</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>sesv2</artifactId>
+            <version>${aws.sdk.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>apache5-client</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>netty-nio-client</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>url-connection-client</artifactId>
+            <version>${aws.sdk.version}</version>
+        </dependency>
 
         <dependency>
             <groupId>org.postgresql</groupId>
@@ -67,11 +104,6 @@
         <dependency>
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-database-postgresql</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.bucket4j</groupId>
-            <artifactId>bucket4j-core</artifactId>
-            <version>8.10.1</version>
         </dependency>
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
@@ -113,17 +145,6 @@
             <artifactId>dotenv-java</artifactId>
             <version>3.0.2</version>
         </dependency>
-        <dependency>
-            <groupId>com.google.cloud</groupId>
-            <artifactId>google-cloud-vertexai</artifactId>
-            <version>1.7.0</version>
-        </dependency>
-        <!-- AWS SDK for Bedrock (Claude) -->
-        <dependency>
-            <groupId>software.amazon.awssdk</groupId>
-            <artifactId>bedrockruntime</artifactId>
-            <version>2.31.0</version>
-        </dependency>
         <!-- PDF text extraction (criteria service) -->
         <dependency>
             <groupId>org.apache.pdfbox</groupId>
@@ -142,17 +163,6 @@
             <artifactId>commons-io</artifactId>
             <version>2.15.1</version>
         </dependency>
-        <!-- Flyway migrations -->
-        <dependency>
-            <groupId>org.flywaydb</groupId>
-            <artifactId>flyway-core</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.flywaydb</groupId>
-            <artifactId>flyway-database-postgresql</artifactId>
-            <version>10.12.0</version>
-        </dependency>
-        <!-- flyway-database-sqlserver is bundled in flyway-core via mssql-jdbc -->
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
@@ -166,11 +176,6 @@
         <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
-            <scope>runtime</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.microsoft.sqlserver</groupId>
-            <artifactId>mssql-jdbc</artifactId>
             <scope>runtime</scope>
         </dependency>
     </dependencies>

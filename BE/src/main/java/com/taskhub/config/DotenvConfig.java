@@ -2,10 +2,12 @@ package com.taskhub.config;
 
 import io.github.cdimascio.dotenv.Dotenv;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 
 import java.nio.file.Path;
 
 @Configuration
+@Profile("dev")
 public class DotenvConfig {
     static {
         String baseDir = System.getProperty("user.dir");

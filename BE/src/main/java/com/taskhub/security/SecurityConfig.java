@@ -87,9 +87,10 @@ public class SecurityConfig {
                             "/v3/api-docs/swagger-config",
                             "/api/health",
                             "/api/auth/**",
-                            "/api/ai/**",
+                            "/api/ai/public/chat",
                             "/api/reviews/latest"
                     ).permitAll();
+                    a.requestMatchers("/api/ai/**").authenticated();
                     if (devProfile) {
                         a.requestMatchers("/h2-console/**").permitAll();
                     }

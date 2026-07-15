@@ -15,4 +15,12 @@ public class RateLimitProperties {
     private int forgotPasswordPerHour = 5;
     /** Max refresh requests per IP per minute. */
     private int refreshPerMinute = 30;
+    /** Max registration attempts per IP per hour. */
+    private int registerPerHour = 10;
+    /** Max account-recovery operations per IP per hour. */
+    private int recoveryPerHour = 10;
+    /** Max authenticated AI operations per IP per minute. */
+    private int aiPerMinute = 30;
+    /** Max public chatbot calls per IP per minute. */
+    private int publicAiPerMinute = 10;
 }

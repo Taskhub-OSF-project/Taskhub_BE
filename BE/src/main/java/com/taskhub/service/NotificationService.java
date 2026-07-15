@@ -5,7 +5,6 @@ import com.taskhub.dto.PageResponse;
 import com.taskhub.dto.request.BroadcastNotificationRequest;
 import com.taskhub.dto.response.NotificationResponse;
 import com.taskhub.entity.Notification;
-import com.taskhub.entity.User;
 import com.taskhub.enums.NotificationType;
 import com.taskhub.enums.Role;
 import com.taskhub.exception.TaskHubException;
@@ -15,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Slice;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -132,36 +132,43 @@ public class NotificationService {
             } catch (IllegalArgumentException e) {
                 throw new TaskHubException("Invalid targetRole: " + req.getTargetRole(), HttpStatus.BAD_REQUEST);
             }
+            if (targetRole == Role.ADMIN) {
+                throw new TaskHubException("ADMIN cannot be a broadcast target", HttpStatus.BAD_REQUEST);
+            }
         }
-
-        List<User> recipients = (targetRole == null)
-                ? userRepository.findAll().stream()
-                        .filter(u -> u.getRole() != Role.ADMIN)
-                        .toList()
-                : userRepository.findByRole(targetRole, PageRequest.of(0, 10_000))
-                        .getContent().stream()
-                        .filter(u -> u.getRole() != Role.ADMIN)
-                        .toList();
 
         NotificationType type = req.getType() != null ? req.getType() : NotificationType.SYSTEM_ANNOUNCEMENT;
         LocalDateTime now = LocalDateTime.now();
-        List<Notification> batch = new ArrayList<>(recipients.size());
-        for (User u : recipients) {
-            batch.add(Notification.builder()
-                    .userId(u.getId())
-                    .type(type)
-                    .title(req.getTitle())
-                    .body(req.getBody())
-                    .message(req.getBody())
-                    .link(req.getLink())
-                    .relatedId(req.getRelatedId())
-                    .isRead(false)
-                    .createdAt(now)
-                    .build());
-        }
-        notificationRepository.saveAll(batch);
-        log.info("Broadcast sent to {} users (targetRole={})", batch.size(),
+        int sent = 0;
+        int page = 0;
+        Slice<Long> recipients;
+        do {
+            PageRequest pageable = PageRequest.of(page++, 500);
+            recipients = targetRole == null
+                    ? userRepository.findBroadcastRecipientIds(pageable)
+                    : userRepository.findBroadcastRecipientIdsByRole(targetRole, pageable);
+
+            List<Notification> batch = new ArrayList<>(recipients.getNumberOfElements());
+            for (Long userId : recipients.getContent()) {
+                batch.add(Notification.builder()
+                        .userId(userId)
+                        .type(type)
+                        .title(req.getTitle())
+                        .body(req.getBody())
+                        .message(req.getBody())
+                        .link(req.getLink())
+                        .relatedId(req.getRelatedId())
+                        .isRead(false)
+                        .createdAt(now)
+                        .build());
+            }
+            notificationRepository.saveAll(batch);
+            notificationRepository.flush();
+            sent += batch.size();
+        } while (recipients.hasNext());
+
+        log.info("Broadcast sent to {} users (targetRole={})", sent,
                 req.getTargetRole() == null ? "ALL" : req.getTargetRole());
-        return batch.size();
+        return sent;
     }
 }

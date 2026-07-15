@@ -11,6 +11,6 @@ public class PasswordResetConfirmRequest {
     @NotBlank
     private String code;
     @NotBlank
-    @Size(min = 6)
+    @Size(min = 8, max = 128)
     private String newPassword;
 }

@@ -21,6 +21,15 @@ Parameters:
     NoEcho: true
     Default: ''
     Description: Optional Supabase service role key for Storage integration
+  AppMailDeliveryEnabled:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Enable AWS SES security emails
+  AppMailFromEmail:
+    Type: String
+    Default: ''
+    Description: Verified SES sender address; required when mail delivery is enabled
 
 Globals:
   Function:
@@ -38,6 +47,16 @@ Resources:
       FunctionName: taskhub-backend
       CodeUri: target/taskhub-backend-1.0.0-lambda.jar
       Handler: com.taskhub.lambda.StreamLambdaHandler::handleRequest
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource: '*'
+            - Effect: Allow
+              Action:
+                - ses:SendEmail
+              Resource: '*'
       Environment:
         Variables:
           SPRING_PROFILES_ACTIVE: supabase
@@ -46,15 +65,25 @@ Resources:
           SPRING_DATASOURCE_PASSWORD: !Ref SpringDatasourcePassword
           SPRING_JPA_HIBERNATE_DDL_AUTO: validate
           SPRING_JPA_SHOW_SQL: 'false'
-          SPRING_FLYWAY_ENABLED: 'false'
+          SPRING_FLYWAY_ENABLED: 'true'
           SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: '2'
           SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: '0'
           SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT: '30000'
           JAVA_TOOL_OPTIONS: -XX:+TieredCompilation -XX:TieredStopAtLevel=1
           TZ: Asia/Ho_Chi_Minh
           APP_JWT_SECRET: !Ref AppJwtSecret
-          APP_CORS_ALLOWED_ORIGINS: https://main.d3lqxlf1rfgnci.amplifyapp.com,http://localhost:5173,http://localhost:3000
+          APP_WALLET_CASH_SIMULATION_ENABLED: 'false'
+          APP_BEDROCK_ENABLED: 'true'
+          APP_BEDROCK_REGION: us-east-1
+          APP_BEDROCK_MODEL_ID: global.anthropic.claude-haiku-4-5-20251001-v1:0
+          APP_BEDROCK_TEMPERATURE: '0.3'
+          APP_BEDROCK_MAX_TOKENS: '4096'
+          APP_CORS_ALLOWED_ORIGINS: https://main.d3lqxlf1rfgnci.amplifyapp.com
           APP_FRONTEND_BASE_URL: https://main.d3lqxlf1rfgnci.amplifyapp.com
+          APP_ADMIN_ENABLED: 'false'
+          APP_MAIL_DELIVERY_ENABLED: !Ref AppMailDeliveryEnabled
+          APP_MAIL_FROM_EMAIL: !Ref AppMailFromEmail
+          APP_MAIL_REGION: us-east-1
           SUPABASE_URL: !Ref SupabaseUrl
           SUPABASE_SERVICE_ROLE_KEY: !Ref SupabaseServiceRoleKey
       Events:

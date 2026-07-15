@@ -15,8 +15,12 @@ public class OtpToken {
     @Column(length = 20, nullable = false)
     private String phone;
 
-    @Column(length = 6, nullable = false)
+    @Column(length = 64, nullable = false)
     private String code;
+
+    @Column(nullable = false)
+    @Builder.Default
+    private Integer failedAttempts = 0;
 
     @Column(length = 20, nullable = false)
     private String type;

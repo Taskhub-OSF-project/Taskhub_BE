@@ -11,6 +11,7 @@ import com.taskhub.enums.TaskStatus;
 import com.taskhub.enums.WalletTransactionType;
 import com.taskhub.exception.TaskHubException;
 import com.taskhub.repository.MilestoneRepository;
+import com.taskhub.repository.EscrowRepository;
 import com.taskhub.repository.TaskRepository;
 import com.taskhub.repository.UserRepository;
 import com.taskhub.security.AuthUtil;
@@ -31,10 +32,11 @@ public class MilestoneService {
     private final UserRepository userRepository;
     private final TaskService taskService;
     private final WalletService walletService;
+    private final EscrowRepository escrowRepository;
 
     @Transactional(readOnly = true)
     public List<MilestoneResponse> getMilestonesByTask(Long taskId) {
-        Task task = taskService.findTask(taskId);
+        taskService.findTask(taskId);
         return milestoneRepository.findByTaskIdOrderByDisplayOrder(taskId).stream()
                 .map(this::toResponse).toList();
     }
@@ -42,13 +44,19 @@ public class MilestoneService {
     @Transactional
     public MilestoneResponse createMilestone(Long taskId, CreateMilestoneRequest req) {
         User currentUser = AuthUtil.getCurrentUser();
-        Task task = taskService.findTask(taskId);
+        Task task = taskRepository.findByIdForUpdate(taskId)
+                .orElseThrow(() -> TaskHubException.notFound("Task not found"));
 
         if (!task.getHirer().getId().equals(currentUser.getId())) {
             throw TaskHubException.forbidden("Only the task owner can add milestones");
         }
         if (task.getStatus() != TaskStatus.DRAFT) {
             throw TaskHubException.badRequest("Can only add milestones to DRAFT tasks");
+        }
+
+        BigDecimal currentTotal = milestoneRepository.sumAmountByTaskId(taskId);
+        if (currentTotal.add(req.getAmount()).compareTo(task.getBudget()) > 0) {
+            throw TaskHubException.badRequest("Total milestone amount cannot exceed task budget");
         }
 
         int nextOrder = milestoneRepository.findByTaskIdOrderByDisplayOrder(taskId).size();
@@ -73,7 +81,8 @@ public class MilestoneService {
     @Transactional
     public MilestoneResponse updateMilestone(Long taskId, Long milestoneId, CreateMilestoneRequest req) {
         User currentUser = AuthUtil.getCurrentUser();
-        Task task = taskService.findTask(taskId);
+        Task task = taskRepository.findByIdForUpdate(taskId)
+                .orElseThrow(() -> TaskHubException.notFound("Task not found"));
 
         if (!task.getHirer().getId().equals(currentUser.getId())) {
             throw TaskHubException.forbidden("Only the task owner can update milestones");
@@ -82,11 +91,18 @@ public class MilestoneService {
             throw TaskHubException.badRequest("Can only update milestones of DRAFT tasks");
         }
 
-        Milestone milestone = milestoneRepository.findByIdAndTaskId(milestoneId, taskId)
+        Milestone milestone = milestoneRepository.findByIdAndTaskIdForUpdate(milestoneId, taskId)
                 .orElseThrow(() -> TaskHubException.notFound("Milestone not found"));
 
         if (milestone.getEscrowStatus() != EscrowStatus.PENDING) {
             throw TaskHubException.badRequest("Cannot update milestone with funded escrow");
+        }
+
+        BigDecimal newTotal = milestoneRepository.sumAmountByTaskId(taskId)
+                .subtract(milestone.getAmount())
+                .add(req.getAmount());
+        if (newTotal.compareTo(task.getBudget()) > 0) {
+            throw TaskHubException.badRequest("Total milestone amount cannot exceed task budget");
         }
 
         milestone.setTitle(req.getTitle().trim());
@@ -124,22 +140,37 @@ public class MilestoneService {
 
     @Transactional
     public MilestoneResponse fundMilestone(Long taskId, Long milestoneId) {
-        User hirer = AuthUtil.getCurrentUser();
-        if (hirer.getRole() != Role.HIRER) {
+        User principal = AuthUtil.getCurrentUser();
+        if (principal.getRole() != Role.HIRER) {
             throw TaskHubException.forbidden("Only hirers can fund milestone escrow");
         }
 
-        Task task = taskService.findTask(taskId);
-        if (!task.getHirer().getId().equals(hirer.getId())) {
+        Task task = taskRepository.findByIdForUpdate(taskId)
+                .orElseThrow(() -> TaskHubException.notFound("Task not found"));
+        if (!task.getHirer().getId().equals(principal.getId())) {
             throw TaskHubException.forbidden("Not your task");
         }
+        if (task.getStatus() != TaskStatus.LOCKED) {
+            throw TaskHubException.badRequest("Milestones can only be funded while task is LOCKED");
+        }
+        if (milestoneRepository.sumAmountByTaskId(taskId).compareTo(task.getBudget()) != 0) {
+            throw TaskHubException.badRequest("Milestone total must equal task budget before funding");
+        }
+        if (escrowRepository.findByTaskId(taskId)
+                .filter(e -> e.getStatus() == EscrowStatus.FUNDED || e.getStatus() == EscrowStatus.RELEASED)
+                .isPresent()) {
+            throw TaskHubException.badRequest("Task escrow and milestone escrow are mutually exclusive");
+        }
 
-        Milestone milestone = milestoneRepository.findByIdAndTaskId(milestoneId, taskId)
+        Milestone milestone = milestoneRepository.findByIdAndTaskIdForUpdate(milestoneId, taskId)
                 .orElseThrow(() -> TaskHubException.notFound("Milestone not found"));
 
-        if (milestone.getEscrowStatus() == EscrowStatus.FUNDED) {
-            throw TaskHubException.badRequest("Milestone already funded");
+        if (milestone.getEscrowStatus() != EscrowStatus.PENDING) {
+            throw TaskHubException.badRequest("Milestone is not available for funding");
         }
+
+        User hirer = userRepository.findByIdForUpdate(principal.getId())
+                .orElseThrow(() -> TaskHubException.notFound("User not found"));
 
         BigDecimal platformFee = EscrowCalculator.platformFee(milestone.getAmount());
         BigDecimal totalDeduction = milestone.getAmount().add(platformFee);
@@ -165,23 +196,30 @@ public class MilestoneService {
     @Transactional
     public MilestoneResponse approveMilestone(Long taskId, Long milestoneId) {
         User hirer = AuthUtil.getCurrentUser();
-        Task task = taskService.findTask(taskId);
+        Task task = taskRepository.findByIdForUpdate(taskId)
+                .orElseThrow(() -> TaskHubException.notFound("Task not found"));
 
         if (!task.getHirer().getId().equals(hirer.getId())) {
             throw TaskHubException.forbidden("Only task owner can approve milestones");
         }
 
-        Milestone milestone = milestoneRepository.findByIdAndTaskId(milestoneId, taskId)
+        if (task.getStatus() != TaskStatus.SUBMITTED) {
+            throw TaskHubException.badRequest("Task must be SUBMITTED before milestone approval");
+        }
+
+        Milestone milestone = milestoneRepository.findByIdAndTaskIdForUpdate(milestoneId, taskId)
                 .orElseThrow(() -> TaskHubException.notFound("Milestone not found"));
 
         if (milestone.getEscrowStatus() != EscrowStatus.FUNDED) {
             throw TaskHubException.badRequest("Milestone escrow must be funded first");
         }
 
-        User student = task.getAssignedTo();
-        if (student == null) {
+        User assignedStudent = task.getAssignedTo();
+        if (assignedStudent == null) {
             throw TaskHubException.badRequest("Task has no assigned freelancer");
         }
+        User student = userRepository.findByIdForUpdate(assignedStudent.getId())
+                .orElseThrow(() -> TaskHubException.notFound("Assigned freelancer not found"));
 
         milestone.setStatus(Milestone.MilestoneStatus.APPROVED);
         milestone.setReleasedAt(java.time.LocalDateTime.now());
@@ -202,13 +240,18 @@ public class MilestoneService {
     @Transactional
     public MilestoneResponse rejectMilestone(Long taskId, Long milestoneId) {
         User hirer = AuthUtil.getCurrentUser();
-        Task task = taskService.findTask(taskId);
+        Task task = taskRepository.findByIdForUpdate(taskId)
+                .orElseThrow(() -> TaskHubException.notFound("Task not found"));
 
         if (!task.getHirer().getId().equals(hirer.getId())) {
             throw TaskHubException.forbidden("Only task owner can reject milestones");
         }
 
-        Milestone milestone = milestoneRepository.findByIdAndTaskId(milestoneId, taskId)
+        if (task.getStatus() != TaskStatus.SUBMITTED) {
+            throw TaskHubException.badRequest("Task must be SUBMITTED before requesting revision");
+        }
+
+        Milestone milestone = milestoneRepository.findByIdAndTaskIdForUpdate(milestoneId, taskId)
                 .orElseThrow(() -> TaskHubException.notFound("Milestone not found"));
 
         if (milestone.getEscrowStatus() != EscrowStatus.FUNDED) {
@@ -216,16 +259,12 @@ public class MilestoneService {
         }
 
         milestone.setStatus(Milestone.MilestoneStatus.REJECTED);
-        milestone.setEscrowStatus(EscrowStatus.REFUNDED);
-        milestone.setReleasedAt(java.time.LocalDateTime.now());
         milestone = milestoneRepository.save(milestone);
 
-        BigDecimal refundAmount = milestone.getAmount();
-        hirer.setWalletBalance(hirer.getWalletBalance().add(refundAmount));
-        userRepository.save(hirer);
-        walletService.recordTransaction(hirer, WalletTransactionType.refund, refundAmount, task);
+        taskService.transition(task, TaskStatus.IN_PROGRESS);
+        taskRepository.save(task);
 
-        log.info("Milestone rejected: id={}, taskId={}, refunded={}", milestoneId, taskId, refundAmount);
+        log.info("Milestone rejected for revision: id={}, taskId={}", milestoneId, taskId);
         return toResponse(milestone);
     }
 
@@ -239,8 +278,8 @@ public class MilestoneService {
 
         if (releasedCount == totalCount) {
             taskService.transition(task, TaskStatus.COMPLETED);
-        } else if (fundedCount > 0) {
-            taskService.transition(task, TaskStatus.ACTIVE);
+        } else if (fundedCount == totalCount && task.getStatus() == TaskStatus.LOCKED) {
+            taskService.transition(task, TaskStatus.ESCROW_FUNDED);
         }
         taskRepository.save(task);
     }

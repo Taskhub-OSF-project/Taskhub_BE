@@ -59,9 +59,7 @@ public class JwtService {
     void validateSecret() {
         boolean bypassCheck = false;
         for (String profile : environment.getActiveProfiles()) {
-            if ("dev".equalsIgnoreCase(profile)
-                    || "supabase".equalsIgnoreCase(profile)
-                    || "postgres".equalsIgnoreCase(profile)) {
+            if ("dev".equalsIgnoreCase(profile)) {
                 bypassCheck = true;
                 break;
             }

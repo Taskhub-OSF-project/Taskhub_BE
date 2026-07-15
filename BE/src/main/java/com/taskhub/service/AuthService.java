@@ -16,6 +16,7 @@ import com.taskhub.entity.RefreshToken;
 import com.taskhub.entity.User;
 import com.taskhub.entity.VerificationToken;
 import com.taskhub.enums.VerificationTokenType;
+import com.taskhub.enums.Role;
 import com.taskhub.repository.OtpTokenRepository;
 import com.taskhub.exception.TaskHubException;
 import com.taskhub.repository.RefreshTokenRepository;
@@ -33,11 +34,14 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Map;
-import java.util.concurrent.ThreadLocalRandom;
+import java.security.MessageDigest;
+import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
 
 @Service
 @RequiredArgsConstructor
 public class AuthService {
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
     private final OtpTokenRepository otpTokenRepository;
@@ -53,6 +57,9 @@ public class AuthService {
 
     @Transactional
     public AuthResponse register(RegisterRequest req) {
+        if (req.getRole() == Role.ADMIN) {
+            throw TaskHubException.forbidden("Admin accounts cannot be self-registered");
+        }
         if (userRepository.existsByEmail(req.getEmail()))
             throw TaskHubException.badRequest("Email already registered");
 
@@ -104,6 +111,10 @@ public class AuthService {
             auditService.record("LOGIN_FAILURE", user.getEmail(), "Invalid password");
             throw TaskHubException.badRequest("Email hoặc mật khẩu không đúng");
         }
+        if (Boolean.TRUE.equals(user.getIsBanned())) {
+            auditService.record("LOGIN_FAILURE", user.getEmail(), "Banned account");
+            throw TaskHubException.unauthorized("Account is disabled");
+        }
 
         auditService.record("LOGIN_SUCCESS", user.getEmail(), "User logged in");
         return buildAuthResponse(user, generateAndSaveRefreshToken(user.getId()));
@@ -128,6 +139,10 @@ public class AuthService {
 
         User user = userRepository.findById(refreshToken.getUserId())
                 .orElseThrow(() -> TaskHubException.notFound("User not found"));
+        if (Boolean.TRUE.equals(user.getIsBanned())) {
+            refreshTokenRepository.revokeAllByUserId(user.getId());
+            throw TaskHubException.unauthorized("Account is disabled");
+        }
 
         refreshToken.setRevoked(true);
         refreshTokenRepository.save(refreshToken);
@@ -163,6 +178,11 @@ public class AuthService {
     @Transactional
     public void forgotPassword(ForgotPasswordRequest req) {
         userRepository.findByEmail(req.getEmail()).ifPresent(user -> {
+            if (!mailService.isDeliveryEnabled()) {
+                auditService.record("PASSWORD_RESET_DELIVERY_DISABLED", user.getEmail(),
+                        "Password reset provider is disabled");
+                return;
+            }
             verificationTokenRepository.invalidateActive(
                     user.getId(),
                     VerificationTokenType.PASSWORD_RESET,
@@ -172,6 +192,14 @@ public class AuthService {
             String rawToken = TokenHasher.randomToken();
             String tokenHash = TokenHasher.sha256(rawToken);
 
+            String resetLink = frontendBaseUrl + "/recover?token=" + rawToken;
+            try {
+                mailService.sendPasswordReset(user.getEmail(), resetLink);
+            } catch (RuntimeException ex) {
+                auditService.record("PASSWORD_RESET_DELIVERY_FAILURE", user.getEmail(),
+                        "Password reset email delivery failed");
+                return;
+            }
             verificationTokenRepository.save(VerificationToken.builder()
                     .userId(user.getId())
                     .tokenHash(tokenHash)
@@ -179,8 +207,6 @@ public class AuthService {
                     .expiresAt(LocalDateTime.now().plusHours(1))
                     .build());
 
-            String resetLink = frontendBaseUrl + "/recover?token=" + rawToken;
-            mailService.sendPasswordReset(user.getEmail(), resetLink);
             auditService.record("FORGOT_PASSWORD_INITIATED", user.getEmail(), "Password reset email sent");
         });
     }
@@ -189,39 +215,35 @@ public class AuthService {
     public Map<String, Object> recoverAccount(RecoverAccountRequest req) {
         String channel = req.getChannel() == null ? "EMAIL" : req.getChannel().trim().toUpperCase();
         String contact = req.getContact() == null ? "" : req.getContact().trim();
-        var user = "SMS".equals(channel) || "PHONE".equals(channel)
-                ? userRepository.findByPhone(contact)
-                : userRepository.findByEmail(contact);
-
-        if (user.isEmpty()) {
-            return Map.of(
-                    "message", "No account found for the provided contact",
-                    "found", false
-            );
+        if (!"EMAIL".equals(channel) && !"SMS".equals(channel) && !"PHONE".equals(channel)) {
+            throw TaskHubException.badRequest("Unsupported recovery channel");
         }
-
-        return Map.of(
-                "message", "Account found",
-                "found", true,
-                "maskedEmail", maskEmail(user.get().getEmail())
-        );
+        if ("SMS".equals(channel) || "PHONE".equals(channel)) userRepository.findByPhone(contact);
+        else userRepository.findByEmail(contact);
+        return Map.of("message", "If the account exists, recovery instructions will be sent", "found", true);
     }
 
     @Transactional
     public Map<String, String> requestPasswordReset(PasswordResetRequest req) {
         String channel = req.getChannel() == null ? "EMAIL" : req.getChannel().trim().toUpperCase();
         String identifier = req.getIdentifier() == null ? "" : req.getIdentifier().trim();
+        if (!"EMAIL".equals(channel) && !"SMS".equals(channel) && !"PHONE".equals(channel)) {
+            throw TaskHubException.badRequest("Unsupported recovery channel");
+        }
         if ("SMS".equals(channel) || "PHONE".equals(channel)) {
+            if (!smsService.isDeliveryEnabled()) {
+                return Map.of("message", "If the phone number exists, a reset code will be sent");
+            }
             userRepository.findByPhone(identifier).ifPresent(user -> {
                 otpTokenRepository.deleteActiveByPhoneAndType(identifier, "PASSWORD_RESET");
-                String code = String.format("%06d", ThreadLocalRandom.current().nextInt(0, 1_000_000));
+                String code = String.format("%06d", SECURE_RANDOM.nextInt(1_000_000));
+                smsService.sendOtpRecovery(identifier, code);
                 otpTokenRepository.save(OtpToken.builder()
                         .phone(identifier)
-                        .code(code)
+                        .code(TokenHasher.sha256(code))
                         .type("PASSWORD_RESET")
                         .expiresAt(LocalDateTime.now().plusMinutes(5))
                         .build());
-                smsService.sendOtpRecovery(identifier, code);
                 auditService.record("FORGOT_PASSWORD_INITIATED", user.getEmail(), "Password reset SMS sent");
             });
             return Map.of("message", "If the phone number exists, a reset code will be sent");
@@ -231,7 +253,7 @@ public class AuthService {
         return Map.of("message", "If the email exists, a reset link will be sent");
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = TaskHubException.class)
     public Map<String, String> confirmPasswordReset(PasswordResetConfirmRequest req) {
         String identifier = req.getIdentifier() == null ? "" : req.getIdentifier().trim();
         String code = req.getCode() == null ? "" : req.getCode().trim();
@@ -239,7 +261,13 @@ public class AuthService {
         if (!identifier.contains("@")) {
             OtpToken otp = otpTokenRepository.findValidOtp(identifier, "PASSWORD_RESET")
                     .orElseThrow(() -> TaskHubException.badRequest("Invalid or expired reset code"));
-            if (!otp.getCode().equals(code)) {
+            byte[] expected = otp.getCode().getBytes(StandardCharsets.UTF_8);
+            byte[] supplied = TokenHasher.sha256(code).getBytes(StandardCharsets.UTF_8);
+            if (!MessageDigest.isEqual(expected, supplied)) {
+                int attempts = (otp.getFailedAttempts() == null ? 0 : otp.getFailedAttempts()) + 1;
+                otp.setFailedAttempts(attempts);
+                if (attempts >= 5) otp.setUsed(true);
+                otpTokenRepository.save(otp);
                 throw TaskHubException.badRequest("Invalid or expired reset code");
             }
 
@@ -356,9 +384,22 @@ public class AuthService {
     }
 
     private void issueEmailVerificationToken(User user) {
+        if (!mailService.isDeliveryEnabled()) {
+            auditService.record("EMAIL_VERIFY_DELIVERY_DISABLED", user.getEmail(),
+                    "Email verification provider is disabled");
+            return;
+        }
         String rawToken = TokenHasher.randomToken();
         String tokenHash = TokenHasher.sha256(rawToken);
 
+        String verifyLink = frontendBaseUrl + "/verify-email?token=" + rawToken;
+        try {
+            mailService.sendEmailVerification(user.getEmail(), verifyLink);
+        } catch (RuntimeException ex) {
+            auditService.record("EMAIL_VERIFY_DELIVERY_FAILURE", user.getEmail(),
+                    "Email verification delivery failed");
+            return;
+        }
         verificationTokenRepository.save(VerificationToken.builder()
                 .userId(user.getId())
                 .tokenHash(tokenHash)
@@ -366,8 +407,6 @@ public class AuthService {
                 .expiresAt(LocalDateTime.now().plusHours(24))
                 .build());
 
-        String verifyLink = frontendBaseUrl + "/verify-email?token=" + rawToken;
-        mailService.sendEmailVerification(user.getEmail(), verifyLink);
     }
 
     private String trimToNull(String value) {
@@ -376,9 +415,4 @@ public class AuthService {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
-    private String maskEmail(String email) {
-        int at = email == null ? -1 : email.indexOf('@');
-        if (at <= 1) return "***";
-        return email.charAt(0) + "***" + email.substring(at);
-    }
 }

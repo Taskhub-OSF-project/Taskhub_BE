@@ -35,10 +35,10 @@ public class CriteriaExtractionService {
     private static final long MAX_BYTES = 15 * 1024 * 1024;
     private static final int MAX_TEXT_PREVIEW = 8000;
     private static final int MAX_CHARS_PER_PAGE = 2000;
-    private final GeminiAiService geminiAiService;
+    private final TaskHubAiService aiService;
 
-    public CriteriaExtractionService(GeminiAiService geminiAiService) {
-        this.geminiAiService = geminiAiService;
+    public CriteriaExtractionService(TaskHubAiService aiService) {
+        this.aiService = aiService;
     }
 
     /**
@@ -202,7 +202,7 @@ public class CriteriaExtractionService {
         }
 
         try {
-            com.taskhub.dto.response.AiCriteriaResponse resp = geminiAiService
+            com.taskhub.dto.response.AiCriteriaResponse resp = aiService
                     .suggestCriteriaFromBrief(combinedContext, type, fileName);
             if (resp == null || resp.getSuggestions() == null || resp.getSuggestions().isEmpty()) {
                 log.warn("Gemini returned empty suggestions for {}", fileName);
