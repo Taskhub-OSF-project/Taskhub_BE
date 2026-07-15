@@ -1,6 +1,7 @@
 package com.taskhub.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.taskhub.dto.request.*;
 import com.taskhub.dto.response.*;
@@ -73,14 +74,16 @@ public class TaskHubAiService {
         String prompt = buildProgressPrompt(task, submissions, currentUser.getRole().name());
 
         String reply = callModel(prompt);
+        ProgressModelOutput modelOutput = parseProgressModelOutput(reply);
         return AiProgressResponse.builder()
                 .taskId(task.getId())
                 .taskTitle(task.getTitle())
                 .currentStatus(task.getStatus().name())
                 .progressSummary(summarizeProgress(task, submissions))
-                .aiAnalysis(reply)
-                .riskFlags(detectRisks(task, submissions))
-                .recommendations(generateRecommendations(task, submissions))
+                .aiAnalysis(modelOutput.assessment())
+                .riskFlags(mergeProgressText(modelOutput.riskFlags(), detectRisks(task, submissions)))
+                .recommendations(mergeProgressText(
+                        modelOutput.recommendations(), generateRecommendations(task, submissions)))
                 .analyzedAt(LocalDateTime.now())
                 .build();
     }
@@ -355,6 +358,7 @@ public class TaskHubAiService {
 
     private String buildBriefCriteriaPrompt(String context, String fileType, String fileName) {
         return """
+                MODE = "TIEU_CHI"
                 Bạn là chuyên gia thiết kế tiêu chí nghiệm thu cho công việc freelance.
 
                 ## File đã upload: %s (%s)
@@ -777,7 +781,16 @@ public class TaskHubAiService {
         }
 
         sb.append("\nUser role requesting this: ").append(userRole).append("\n\n");
-        sb.append("Please provide:\n1. Current progress assessment\n2. Risk flags (overdue, low quality, communication gaps, etc.)\n3. Actionable recommendations\n\nRespond in Vietnamese.");
+        sb.append("""
+
+                Chỉ trả về một JSON object hợp lệ, không dùng markdown và không thêm nội dung ngoài JSON:
+                {
+                  "assessment": "Nhận định ngắn gọn, dễ hiểu bằng tiếng Việt",
+                  "riskFlags": ["Rủi ro cụ thể; để mảng rỗng nếu không có"],
+                  "recommendations": ["Hành động cụ thể tiếp theo"]
+                }
+                Không lặp lại dữ liệu đầu vào và không tạo thêm object lồng nhau.
+                """);
 
         return sb.toString();
     }
@@ -1407,27 +1420,99 @@ public class TaskHubAiService {
 
     // ── Response Parsers ───────────────────────────────────────────────────────
 
+    private ProgressModelOutput parseProgressModelOutput(String rawReply) {
+        String raw = rawReply == null ? "" : rawReply.trim();
+        try {
+            String json = raw;
+            if (json.startsWith("```")) {
+                int firstLine = json.indexOf('\n');
+                int closing = json.lastIndexOf("```");
+                if (firstLine >= 0 && closing > firstLine) {
+                    json = json.substring(firstLine + 1, closing).trim();
+                }
+            }
+            int start = json.indexOf('{');
+            int end = json.lastIndexOf('}');
+            if (start >= 0 && end > start) {
+                json = json.substring(start, end + 1);
+            }
+            Map<String, Object> data = objectMapper.readValue(json, new TypeReference<>() {});
+            String assessment = firstNonBlank(
+                    formatProgressField(data.get("assessment")),
+                    formatProgressField(data.get("overallAssessment")),
+                    formatProgressField(data.get("aiAnalysis")));
+            if (assessment.isBlank()) {
+                throw new IllegalArgumentException("missing assessment");
+            }
+            return new ProgressModelOutput(
+                    assessment,
+                    formatProgressField(data.get("riskFlags")),
+                    formatProgressField(data.get("recommendations")));
+        } catch (Exception ex) {
+            log.warn("Failed to parse progress AI response; using safe display fallback: {}", ex.getMessage());
+            String safeAssessment = raw.startsWith("{") || raw.startsWith("[") || raw.startsWith("```")
+                    ? "AI đã phân tích tiến độ nhưng phản hồi chưa đúng cấu trúc hiển thị. Các cảnh báo và khuyến nghị hệ thống vẫn được giữ bên dưới."
+                    : raw;
+            if (safeAssessment.isBlank()) {
+                safeAssessment = "Chưa nhận được phần nhận định từ AI.";
+            }
+            return new ProgressModelOutput(safeAssessment, "", "");
+        }
+    }
+
+    private String formatProgressField(Object value) {
+        if (value == null) return "";
+        if (value instanceof Collection<?> collection) {
+            return collection.stream()
+                    .map(String::valueOf)
+                    .map(String::trim)
+                    .filter(item -> !item.isBlank())
+                    .map(item -> "• " + item)
+                    .reduce((left, right) -> left + "\n" + right)
+                    .orElse("");
+        }
+        return String.valueOf(value).trim();
+    }
+
+    private String firstNonBlank(String... values) {
+        return Arrays.stream(values).filter(value -> value != null && !value.isBlank())
+                .findFirst().orElse("");
+    }
+
+    private String mergeProgressText(String modelText, String systemText) {
+        if (modelText == null || modelText.isBlank()) return systemText;
+        if ("Không có rủi ro nổi bật".equals(systemText)
+                || "Tiến độ tốt, tiếp tục theo dõi.".equals(systemText)) return modelText;
+        if (systemText == null || systemText.isBlank() || modelText.contains(systemText)) return modelText;
+        return modelText + "\n" + systemText;
+    }
+
+    private record ProgressModelOutput(String assessment, String riskFlags, String recommendations) {}
+
     private List<AiCriteriaResponse.CriteriaSuggestion> parseCriteriaSuggestions(String text, Integer num) {
         List<AiCriteriaResponse.CriteriaSuggestion> results = new ArrayList<>();
         int count = num != null ? num : 5;
 
         try {
-            text = text.trim();
-            if (text.startsWith("```")) {
-                int start = text.indexOf("```") + 3;
-                int end = text.lastIndexOf("```");
-                if (end > start) text = text.substring(start, end).trim();
-                if (text.startsWith("json")) text = text.substring(4).trim();
-            }
+            text = stripJsonMarkdown(text);
+            JsonNode root = objectMapper.readTree(text);
+            JsonNode items = root.isArray() ? root : firstArray(root,
+                    "suggestions", "criteria", "acceptanceCriteria", "recommendedCriteria");
 
-            if (text.startsWith("[")) {
-                var list = objectMapper.readValue(text, new TypeReference<List<Map<String, Object>>>() {});
-                for (Map<String, Object> item : list) {
+            if (items != null && items.isArray()) {
+                for (JsonNode item : items) {
+                    String name = firstNodeText(item, "name", "title", "criterionName");
+                    String description = firstNodeText(item, "description", "text", "criterion");
+                    if ((name == null || name.isBlank()) && (description == null || description.isBlank())) continue;
+                    if (name == null || name.isBlank()) name = "Tiêu chí " + (results.size() + 1);
+                    if (description == null || description.isBlank()) description = name;
+                    int maxScore = item.path("maxScore").canConvertToInt()
+                            ? item.path("maxScore").asInt() : 10;
                     results.add(AiCriteriaResponse.CriteriaSuggestion.builder()
-                            .name((String) item.get("name"))
-                            .description((String) item.get("description"))
-                            .maxScore(item.get("maxScore") != null ? ((Number) item.get("maxScore")).intValue() : 10)
-                            .evaluationGuide((String) item.get("evaluationGuide"))
+                            .name(name)
+                            .description(description)
+                            .maxScore(Math.max(1, Math.min(100, maxScore)))
+                            .evaluationGuide(firstNodeText(item, "evaluationGuide", "verification", "scoringGuide"))
                             .build());
                     if (results.size() >= count) break;
                 }
@@ -1437,15 +1522,50 @@ public class TaskHubAiService {
         }
 
         if (results.isEmpty()) {
-            for (int i = 1; i <= count; i++) {
+            String plainText = text == null ? "" : text.replace("```json", "").replace("```", "");
+            for (String line : plainText.split("\\R")) {
+                String criterion = line.replaceFirst("^\\s*(?:[-*•]|\\d+[.)])\\s*", "").trim();
+                if (criterion.length() < 12 || criterion.startsWith("{") || criterion.startsWith("[")) continue;
                 results.add(AiCriteriaResponse.CriteriaSuggestion.builder()
-                        .name("Tiêu chí " + i)
-                        .description("Vui lòng xem phản hồi từ AI: " + text.substring(0, Math.min(200, text.length())))
+                        .name("Tiêu chí " + (results.size() + 1))
+                        .description(criterion)
                         .maxScore(10)
                         .build());
+                if (results.size() >= count) break;
             }
         }
         return results;
+    }
+
+    private String stripJsonMarkdown(String text) {
+        String value = text == null ? "" : text.trim();
+        if (value.startsWith("```")) {
+            int firstLine = value.indexOf('\n');
+            int closing = value.lastIndexOf("```");
+            if (firstLine >= 0 && closing > firstLine) {
+                value = value.substring(firstLine + 1, closing).trim();
+            }
+        }
+        return value;
+    }
+
+    private JsonNode firstArray(JsonNode root, String... fieldNames) {
+        if (root == null || !root.isObject()) return null;
+        for (String fieldName : fieldNames) {
+            JsonNode candidate = root.get(fieldName);
+            if (candidate != null && candidate.isArray()) return candidate;
+        }
+        return null;
+    }
+
+    private String firstNodeText(JsonNode node, String... fieldNames) {
+        for (String fieldName : fieldNames) {
+            JsonNode candidate = node.get(fieldName);
+            if (candidate != null && candidate.isValueNode() && !candidate.asText().isBlank()) {
+                return candidate.asText().trim();
+            }
+        }
+        return null;
     }
 
     private AiEvaluationResponse parseEvaluationResponse(String text, Long submissionId, Long taskId) {

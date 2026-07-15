@@ -46,6 +46,12 @@ public class NotificationService {
     }
 
     @Transactional
+    public void notifyAdmins(NotificationType type, String title, String body, String link, Long relatedId) {
+        userRepository.findByRole(Role.ADMIN).forEach(admin ->
+                notify(admin.getId(), type, title, body, link, relatedId));
+    }
+
+    @Transactional
     public void notifyApplicationReceived(Long hirerId, String studentName, String taskTitle, Long taskId) {
         notify(hirerId, NotificationType.TASK_APPLICATION_RECEIVED,
                 "Ứng viên mới cho công việc của bạn",

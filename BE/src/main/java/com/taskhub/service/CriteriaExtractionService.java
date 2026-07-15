@@ -68,7 +68,7 @@ public class CriteriaExtractionService {
         FileContent content = readContent(file, type);
         String combinedContext = buildContext(fileName, type, content, taskDescription, extraRequirements);
 
-        CriteriaExtractResponse aiResult = tryGemini(fileName, type, combinedContext);
+        CriteriaExtractResponse aiResult = tryAiExtraction(fileName, type, combinedContext);
         if (aiResult != null) return aiResult;
 
         return CriteriaExtractResponse.builder()
@@ -191,7 +191,7 @@ public class CriteriaExtractionService {
 
     // ── Gemini attempt ────────────────────────────────────────────────────────
 
-    private CriteriaExtractResponse tryGemini(String fileName, String type, String combinedContext) {
+    private CriteriaExtractResponse tryAiExtraction(String fileName, String type, String combinedContext) {
         // Check if context has actual file content
         boolean hasContent = combinedContext.contains("=== NỘI DUNG FILE")
                 && !combinedContext.contains("[Không đọc được nội dung file");
@@ -205,7 +205,7 @@ public class CriteriaExtractionService {
             com.taskhub.dto.response.AiCriteriaResponse resp = aiService
                     .suggestCriteriaFromBrief(combinedContext, type, fileName);
             if (resp == null || resp.getSuggestions() == null || resp.getSuggestions().isEmpty()) {
-                log.warn("Gemini returned empty suggestions for {}", fileName);
+                log.warn("Bedrock returned empty criteria suggestions for {}", fileName);
                 return null;
             }
             List<ExtractedCriterion> out = new ArrayList<>();
@@ -217,14 +217,14 @@ public class CriteriaExtractionService {
                         .rationale(rationale)
                         .build());
             }
-            log.info("Gemini extracted {} criteria from {}", out.size(), fileName);
+            log.info("Bedrock extracted {} criteria from {}", out.size(), fileName);
             return CriteriaExtractResponse.builder()
                     .fileName(fileName)
                     .detectedType(type)
                     .suggestions(out)
                     .build();
         } catch (Exception e) {
-            log.warn("Gemini criteria extraction failed for {}, falling back to heuristic: {}",
+            log.warn("Bedrock criteria extraction failed for {}, falling back to heuristic: {}",
                     fileName, e.getMessage());
             return null;
         }

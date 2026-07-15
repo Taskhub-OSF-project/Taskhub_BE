@@ -27,5 +27,9 @@ public class RemovalAIReport {
     private String aiAnalysis;
     private List<String> warnings;
     private Boolean canAutoApprove;
+    private Integer recentRemovalRequestCount;
+    private Boolean frequentRequester;
+    private Integer riskScore;
+    private String moderationDecision;
     private LocalDateTime generatedAt;
 }

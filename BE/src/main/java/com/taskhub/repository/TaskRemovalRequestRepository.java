@@ -10,6 +10,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import java.util.List;
 import java.util.Optional;
+import java.time.LocalDateTime;
 
 @Repository
 public interface TaskRemovalRequestRepository extends JpaRepository<TaskRemovalRequest, Long> {
@@ -25,6 +26,8 @@ public interface TaskRemovalRequestRepository extends JpaRepository<TaskRemovalR
     Optional<TaskRemovalRequest> findByTaskIdAndStatus(Long taskId, RemovalStatus status);
 
     boolean existsByTaskIdAndStatus(Long taskId, RemovalStatus status);
+
+    long countByRequestedByIdAndCreatedAtAfter(Long userId, LocalDateTime createdAfter);
 
     @Query("SELECT trr FROM TaskRemovalRequest trr WHERE trr.status = :status ORDER BY trr.createdAt DESC")
     List<TaskRemovalRequest> findPendingRequests(@Param("status") RemovalStatus status);

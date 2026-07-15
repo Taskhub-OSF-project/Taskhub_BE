@@ -2,6 +2,7 @@ package com.taskhub.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.taskhub.dto.request.AiChatRequest;
+import com.taskhub.dto.request.AiCriteriaFromJobRequest;
 import com.taskhub.dto.request.AiEvaluationRequest;
 import com.taskhub.dto.request.AiFileExtractRequest;
 import com.taskhub.dto.request.AiProgressRequest;
@@ -29,6 +30,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.net.http.HttpClient;
 import java.util.Optional;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -115,5 +117,44 @@ class TaskHubAiSecurityTest {
                 AiFileExtractRequest.builder().fileUrl("https://localhost/a.txt").build()))
                 .getStatus().value());
         verifyNoInteractions(aiModelClient);
+    }
+
+    @Test
+    void criteriaFromJob_parsesObjectWrappedCriteria() {
+        when(aiModelClient.generate(org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn("""
+                        {"criteria":[{"name":"File bàn giao","description":"Bàn giao 3 file PNG 1080x1080 không watermark","maxScore":20,"evaluationGuide":"Đủ 3 file là đạt"}]}
+                        """);
+
+        var response = service.suggestCriteriaFromJob(AiCriteriaFromJobRequest.builder()
+                .jobTitle("Thiết kế logo")
+                .jobDescription("Thiết kế bộ logo mạng xã hội")
+                .numSuggestions(5)
+                .build());
+
+        assertEquals(1, response.getSuggestions().size());
+        assertEquals("File bàn giao", response.getSuggestions().get(0).getName());
+        assertEquals(20, response.getSuggestions().get(0).getMaxScore());
+    }
+
+    @Test
+    void progress_returnsFriendlyFieldsInsteadOfRawJson() {
+        User owner = User.builder().id(2L).email("owner@test.com").fullName("Owner")
+                .password("x").role(Role.HIRER).build();
+        Task task = Task.builder().id(5L).title("Logo").hirer(owner).build();
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(owner, null));
+        when(taskRepository.findById(5L)).thenReturn(Optional.of(task));
+        when(submissionRepository.findByTaskId(5L)).thenReturn(List.of());
+        when(aiModelClient.generate(org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn("""
+                        {"assessment":"Tiến độ đang đúng kế hoạch","riskFlags":["Thiếu bản xem trước"],"recommendations":["Gửi bản xem trước hôm nay"]}
+                        """);
+
+        var response = service.analyzeProgress(AiProgressRequest.builder().taskId(5L).build());
+
+        assertEquals("Tiến độ đang đúng kế hoạch", response.getAiAnalysis());
+        org.junit.jupiter.api.Assertions.assertTrue(response.getRiskFlags().contains("Thiếu bản xem trước"));
+        org.junit.jupiter.api.Assertions.assertTrue(response.getRecommendations().contains("Gửi bản xem trước hôm nay"));
     }
 }
