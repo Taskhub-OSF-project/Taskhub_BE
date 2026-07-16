@@ -33,6 +33,7 @@ import java.util.Locale;
 public class CriteriaExtractionService {
 
     private static final long MAX_BYTES = 15 * 1024 * 1024;
+    private static final long MAX_IMAGE_BYTES = 5 * 1024 * 1024;
     private static final int MAX_TEXT_PREVIEW = 8000;
     private static final int MAX_CHARS_PER_PAGE = 2000;
     private final TaskHubAiService aiService;
@@ -65,17 +66,42 @@ public class CriteriaExtractionService {
         String fileName = file.getOriginalFilename() != null ? file.getOriginalFilename() : "upload";
         String type = detectType(fileName, file.getContentType());
 
+        if ("IMAGE".equals(type)) {
+            if (file.getSize() > MAX_IMAGE_BYTES) {
+                throw TaskHubException.badRequest("Image too large (max 5 MB)");
+            }
+            try {
+                byte[] bytes = file.getBytes();
+                String imageFormat = detectImageFormat(bytes);
+                return aiService.extractTaskBriefFromImage(
+                        bytes, imageFormat, fileName, taskDescription, extraRequirements);
+            } catch (TaskHubException e) {
+                throw e;
+            } catch (Exception e) {
+                log.warn("Cannot read uploaded image {}: {}", fileName, e.getMessage());
+                throw TaskHubException.badRequest("Cannot read the uploaded image");
+            }
+        }
+
         FileContent content = readContent(file, type);
-        String combinedContext = buildContext(fileName, type, content, taskDescription, extraRequirements);
+        if (content.preview == null || content.preview.isBlank()) {
+            throw unreadableBrief(type);
+        }
 
-        CriteriaExtractResponse aiResult = tryAiExtraction(fileName, type, combinedContext);
-        if (aiResult != null) return aiResult;
+        return aiService.extractTaskBriefFromText(
+                content.preview, type, fileName, taskDescription, extraRequirements);
+    }
 
-        return CriteriaExtractResponse.builder()
-                .fileName(fileName)
-                .detectedType(type)
-                .suggestions(buildHeuristicSuggestions(type, fileName, content.preview, taskDescription))
-                .build();
+    private TaskHubException unreadableBrief(String type) {
+        return switch (type) {
+            case "DOCUMENT" -> TaskHubException.badRequest(
+                    "File DOCX không hợp lệ hoặc bị hỏng. Hãy mở bằng Word và lưu lại dưới dạng .docx rồi upload lại.");
+            case "PDF" -> TaskHubException.badRequest(
+                    "PDF không có nội dung chữ đọc được. Hãy upload PDF có text hoặc ảnh PNG/JPG rõ nét.");
+            case "TEXT" -> TaskHubException.badRequest("File TXT không có nội dung đọc được.");
+            default -> TaskHubException.badRequest(
+                    "Định dạng brief chưa được hỗ trợ. Hãy dùng PNG, JPG, WebP, PDF, DOCX hoặc TXT.");
+        };
     }
 
     // ── Content extraction ────────────────────────────────────────────────────
@@ -305,6 +331,26 @@ public class CriteriaExtractionService {
             return "TEXT";
         if (contentType != null && contentType.startsWith("image/")) return "IMAGE";
         return "GENERIC";
+    }
+
+    private String detectImageFormat(byte[] bytes) {
+        if (bytes.length >= 8
+                && (bytes[0] & 0xff) == 0x89 && bytes[1] == 'P' && bytes[2] == 'N' && bytes[3] == 'G') {
+            return "png";
+        }
+        if (bytes.length >= 3 && (bytes[0] & 0xff) == 0xff && (bytes[1] & 0xff) == 0xd8
+                && (bytes[2] & 0xff) == 0xff) {
+            return "jpeg";
+        }
+        if (bytes.length >= 12 && bytes[0] == 'R' && bytes[1] == 'I' && bytes[2] == 'F'
+                && bytes[3] == 'F' && bytes[8] == 'W' && bytes[9] == 'E'
+                && bytes[10] == 'B' && bytes[11] == 'P') {
+            return "webp";
+        }
+        if (bytes.length >= 6 && bytes[0] == 'G' && bytes[1] == 'I' && bytes[2] == 'F') {
+            return "gif";
+        }
+        throw TaskHubException.badRequest("Unsupported or invalid image. Use PNG, JPG, GIF or WebP.");
     }
 
     private ExtractedCriterion criterion(String text, String rationale) {

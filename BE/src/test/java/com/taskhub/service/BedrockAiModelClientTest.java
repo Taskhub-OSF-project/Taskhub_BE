@@ -62,4 +62,35 @@ class BedrockAiModelClientTest {
 
         assertThrows(TaskHubException.class, () -> client.generate("hello"));
     }
+
+    @Test
+    void sendsImageAndPromptInTheSameConverseMessage() {
+        BedrockProperties properties = new BedrockProperties();
+        Message assistantMessage = Message.builder()
+                .role("assistant")
+                .content(ContentBlock.fromText("{\"criteria\":[]}"))
+                .build();
+        ConverseResponse response = ConverseResponse.builder()
+                .output(ConverseOutput.builder().message(assistantMessage).build())
+                .build();
+        AtomicReference<ConverseRequest> captured = new AtomicReference<>();
+        BedrockRuntimeClient runtime = (BedrockRuntimeClient) Proxy.newProxyInstance(
+                BedrockRuntimeClient.class.getClassLoader(),
+                new Class<?>[]{BedrockRuntimeClient.class},
+                (proxy, method, args) -> {
+                    if (method.getName().equals("converse")) {
+                        captured.set((ConverseRequest) args[0]);
+                        return response;
+                    }
+                    return null;
+                });
+
+        BedrockAiModelClient client = new BedrockAiModelClient(runtime, properties);
+        client.generateWithImage("read this brief", new byte[]{1, 2, 3}, "png", 0.1f, 1024);
+
+        var content = captured.get().messages().get(0).content();
+        assertEquals(ContentBlock.Type.IMAGE, content.get(0).type());
+        assertEquals("png", content.get(0).image().formatAsString());
+        assertEquals("read this brief", content.get(1).text());
+    }
 }

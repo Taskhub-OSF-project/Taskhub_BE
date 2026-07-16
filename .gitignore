@@ -5,6 +5,8 @@ build/
 # Maven build output
 target/
 **/target/
+.aws-sam/
+**/.aws-sam/
 
 # Gradle build output
 build/

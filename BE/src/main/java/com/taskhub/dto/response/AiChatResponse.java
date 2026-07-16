@@ -23,4 +23,5 @@ public class AiChatResponse {
     // For structured responses (evaluation, criteria, etc.)
     private String responseType; // TEXT, CRITERIA_LIST, EVALUATION_RESULT, DISPUTE_RESOLUTION, PROGRESS_REPORT
     private Object structuredData; // contains criteria list, evaluation scores, etc.
+    private List<String> suggestedCriteria;
 }

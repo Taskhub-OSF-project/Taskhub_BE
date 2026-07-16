@@ -120,6 +120,65 @@ class TaskHubAiSecurityTest {
     }
 
     @Test
+    void chat_rejectsReusingSessionForAnotherTask() {
+        when(sessionRepository.findById(9L)).thenReturn(Optional.of(AiChatSession.builder()
+                .id(9L).userId("100").sessionType("CRITERIA").taskId("5").build()));
+
+        TaskHubException error = assertThrows(TaskHubException.class, () -> service.chat(
+                AiChatRequest.builder().sessionId(9L).taskId(6L).message("tạo tiêu chí").build(), "100"));
+
+        assertEquals(400, error.getStatus().value());
+        verifyNoInteractions(aiModelClient);
+    }
+
+    @Test
+    void imageBrief_returnsOneConsistentDraftWithLinkedCriteria() {
+        when(aiModelClient.generateWithImage(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(byte[].class),
+                org.mockito.ArgumentMatchers.eq("png"),
+                org.mockito.ArgumentMatchers.anyFloat(),
+                org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn("""
+                        {"suggestedTitle":"Thiết kế banner","suggestedDescription":"Thiết kế 3 banner PNG 1920x1080px", "suggestedCategory":"Thiết kế","logicallyConsistent":true,"consistencySummary":"Số lượng và định dạng khớp nhau","warnings":[],"criteria":[
+                        {"text":"Bàn giao đúng 3 file PNG kích thước 1920x1080px","rationale":"Đủ đầu ra","sourceEvidence":"3 banner PNG","relatedCriteria":[2]},
+                        {"text":"Cả 3 file sử dụng hệ màu sRGB và không có watermark","rationale":"Đúng kỹ thuật","sourceEvidence":"sRGB, không watermark","relatedCriteria":[1,3]},
+                        {"text":"Nội dung chữ trên 3 banner khớp 100% brief đã cung cấp","rationale":"Đúng nội dung","sourceEvidence":"nội dung trong brief","relatedCriteria":[2]}]}
+                        """);
+
+        var response = service.extractTaskBriefFromImage(
+                new byte[]{1, 2, 3}, "png", "brief.png", null, null);
+
+        assertEquals("Thiết kế banner", response.getSuggestedTitle());
+        assertEquals(3, response.getSuggestions().size());
+        assertEquals(List.of(2), response.getSuggestions().get(0).getRelatedCriteria());
+        assertEquals(true, response.getLogicallyConsistent());
+    }
+
+    @Test
+    void textBrief_returnsOneConsistentDraftForAutofill() {
+        when(aiModelClient.generate(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyFloat(),
+                org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn("""
+                        {"suggestedTitle":"Thiết kế banner","suggestedDescription":"Thiết kế 3 banner PNG 1920x1080px","suggestedCategory":"Thiết kế","logicallyConsistent":true,"consistencySummary":"Các trường khớp brief","warnings":[],"criteria":[
+                        {"text":"Bàn giao đúng 3 file PNG kích thước 1920x1080px","sourceEvidence":"3 banner PNG 1920x1080","relatedCriteria":[2]},
+                        {"text":"Cả 3 file dùng hệ màu sRGB và không có watermark","sourceEvidence":"sRGB, không watermark","relatedCriteria":[1,3]},
+                        {"text":"Nội dung trên 3 banner khớp toàn bộ câu chữ trong brief","sourceEvidence":"nội dung brief","relatedCriteria":[2]}]}
+                        """);
+
+        var response = service.extractTaskBriefFromText(
+                "Thiết kế 3 banner PNG 1920x1080, sRGB, không watermark",
+                "TEXT", "brief.txt", null, null);
+
+        assertEquals("Thiết kế banner", response.getSuggestedTitle());
+        assertEquals("TEXT", response.getDetectedType());
+        assertEquals(3, response.getSuggestions().size());
+        assertEquals(List.of(2), response.getSuggestions().get(0).getRelatedCriteria());
+    }
+
+    @Test
     void criteriaFromJob_parsesObjectWrappedCriteria() {
         when(aiModelClient.generate(org.mockito.ArgumentMatchers.anyString()))
                 .thenReturn("""

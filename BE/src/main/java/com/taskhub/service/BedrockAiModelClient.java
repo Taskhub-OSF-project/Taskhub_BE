@@ -7,10 +7,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.core.exception.SdkClientException;
+import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeClient;
 import software.amazon.awssdk.services.bedrockruntime.model.ContentBlock;
 import software.amazon.awssdk.services.bedrockruntime.model.ConverseRequest;
 import software.amazon.awssdk.services.bedrockruntime.model.ConverseResponse;
+import software.amazon.awssdk.services.bedrockruntime.model.ImageBlock;
+import software.amazon.awssdk.services.bedrockruntime.model.ImageFormat;
+import software.amazon.awssdk.services.bedrockruntime.model.ImageSource;
 import software.amazon.awssdk.services.bedrockruntime.model.InferenceConfiguration;
 import software.amazon.awssdk.services.bedrockruntime.model.Message;
 import software.amazon.awssdk.services.bedrockruntime.model.SystemContentBlock;
@@ -55,6 +59,31 @@ public class BedrockAiModelClient implements AiModelClient {
 
     @Override
     public String generate(String prompt, float temperature, int maxTokens) {
+        return converse(List.of(ContentBlock.fromText(prompt)), temperature, maxTokens);
+    }
+
+    @Override
+    public String generateWithImage(String prompt, byte[] imageBytes, String imageFormat,
+                                    float temperature, int maxTokens) {
+        if (imageBytes == null || imageBytes.length == 0) {
+            throw TaskHubException.badRequest("Image is required");
+        }
+        ImageFormat format = switch (imageFormat == null ? "" : imageFormat.toLowerCase()) {
+            case "png" -> ImageFormat.PNG;
+            case "jpg", "jpeg" -> ImageFormat.JPEG;
+            case "gif" -> ImageFormat.GIF;
+            case "webp" -> ImageFormat.WEBP;
+            default -> throw TaskHubException.badRequest("Unsupported image format");
+        };
+        ImageBlock image = ImageBlock.builder()
+                .format(format)
+                .source(ImageSource.fromBytes(SdkBytes.fromByteArray(imageBytes)))
+                .build();
+        return converse(List.of(ContentBlock.fromImage(image), ContentBlock.fromText(prompt)),
+                temperature, maxTokens);
+    }
+
+    private String converse(List<ContentBlock> content, float temperature, int maxTokens) {
         if (!properties.isEnabled()) {
             throw new TaskHubException("AI service is disabled (APP_BEDROCK_ENABLED=false)",
                     HttpStatus.SERVICE_UNAVAILABLE);
@@ -63,7 +92,7 @@ public class BedrockAiModelClient implements AiModelClient {
         try {
             Message userMessage = Message.builder()
                     .role("user")
-                    .content(ContentBlock.fromText(prompt))
+                    .content(content)
                     .build();
             InferenceConfiguration inference = InferenceConfiguration.builder()
                     .temperature(Math.max(0.0f, Math.min(1.0f, temperature)))
