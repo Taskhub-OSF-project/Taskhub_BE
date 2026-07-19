@@ -11,7 +11,9 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:validate}
+      # Do NOT set ddl-auto here; let the prod profile control it (ddl-auto: none).
+      # Setting it here would override the prod profile when both supabase+prod are active.
+      ddl-auto: none
     show-sql: ${SPRING_JPA_SHOW_SQL:false}
     properties:
       hibernate:
