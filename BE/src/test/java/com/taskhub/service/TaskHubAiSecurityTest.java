@@ -35,6 +35,8 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -201,6 +203,30 @@ class TaskHubAiSecurityTest {
         assertEquals(
                 "Landing page hiển thị đúng trên màn hình từ 360px đến 1440px",
                 response.getSuggestions().get(0).getText());
+    }
+
+    @Test
+    void textBrief_retriesWhenModelFirstReturnsNonJsonProse() {
+        when(aiModelClient.generate(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyFloat(),
+                org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn("Toi khong the tra ve JSON trong lan dau.")
+                .thenReturn("""
+                        {"suggestedTitle":"Thiet ke banner","criteria":[
+                        {"text":"Ban giao dung 3 file PNG kich thuoc 1920x1080px"},
+                        {"text":"Ca 3 file dung he mau sRGB va khong co watermark"},
+                        {"text":"Noi dung tren 3 banner khop voi brief da cung cap"}]}
+                        """);
+
+        var response = service.extractTaskBriefFromText(
+                "Thiet ke 3 banner PNG 1920x1080", "DOCUMENT", "brief.docx", null, null);
+
+        assertEquals(3, response.getSuggestions().size());
+        verify(aiModelClient, times(2)).generate(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyFloat(),
+                org.mockito.ArgumentMatchers.anyInt());
     }
 
     @Test

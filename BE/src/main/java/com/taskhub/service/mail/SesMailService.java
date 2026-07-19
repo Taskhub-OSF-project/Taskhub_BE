@@ -2,6 +2,7 @@ package com.taskhub.service.mail;
 
 import com.taskhub.exception.TaskHubException;
 import jakarta.annotation.PreDestroy;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
@@ -17,6 +18,7 @@ import software.amazon.awssdk.services.sesv2.model.SesV2Exception;
 
 @Service
 @ConditionalOnProperty(name = "app.mail.delivery-enabled", havingValue = "true")
+@Slf4j
 public class SesMailService implements MailService {
     private final SesV2Client client;
     private final String fromEmail;
@@ -83,7 +85,12 @@ public class SesMailService implements MailService {
                                     .build())
                             .build()));
         } catch (SesV2Exception ex) {
-            throw TaskHubException.internalError("Security email delivery failed");
+            String errorCode = ex.awsErrorDetails() == null ? "unknown" : ex.awsErrorDetails().errorCode();
+            log.warn("SES could not deliver a security email (status={}, code={})",
+                    ex.statusCode(), errorCode);
+            throw TaskHubException.internalError(
+                    "Không thể gửi mã bảo mật tới email này. Nếu hệ thống đang ở chế độ thử nghiệm, "
+                            + "email người nhận cần được xác minh trong Amazon SES Singapore.");
         }
     }
 

@@ -25,6 +25,9 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+import java.util.zip.ZipOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -88,6 +91,53 @@ class CriteriaExtractionServiceTest {
         ArgumentCaptor<String> content = ArgumentCaptor.forClass(String.class);
         verify(aiService).extractTaskBriefFromText(content.capture(), eq("DOCUMENT"),
                 eq("brief.docx"), eq("Mô tả hiện tại"), eq("Ưu tiên mobile"));
+        assertTrue(content.getValue().contains("1920x1080"));
+    }
+
+    @Test
+    void docxWithEmptyZipEntryIsSanitizedAndExtracted() throws Exception {
+        byte[] validDocx;
+        try (XWPFDocument document = new XWPFDocument();
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            document.createParagraph().createRun().setText(
+                    "Ban giao 3 banner PNG 1920x1080 va khong co watermark.");
+            document.write(output);
+            validDocx = output.toByteArray();
+        }
+
+        byte[] recoverableDocx;
+        try (ZipInputStream input = new ZipInputStream(new ByteArrayInputStream(validDocx));
+             ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+             ZipOutputStream output = new ZipOutputStream(bytes)) {
+            output.putNextEntry(new ZipEntry(""));
+            output.closeEntry();
+            byte[] buffer = new byte[4096];
+            ZipEntry entry;
+            while ((entry = input.getNextEntry()) != null) {
+                output.putNextEntry(new ZipEntry(entry.getName()));
+                int read;
+                while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
+                output.closeEntry();
+                input.closeEntry();
+            }
+            output.finish();
+            recoverableDocx = bytes.toByteArray();
+        }
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "recoverable.docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                recoverableDocx);
+        CriteriaExtractResponse expected = response("DOCUMENT");
+        when(aiService.extractTaskBriefFromText(anyString(), eq("DOCUMENT"),
+                eq("recoverable.docx"), any(), any())).thenReturn(expected);
+
+        CriteriaExtractResponse actual = service.extractFromFile(file, null, null);
+
+        assertSame(expected, actual);
+        ArgumentCaptor<String> content = ArgumentCaptor.forClass(String.class);
+        verify(aiService).extractTaskBriefFromText(content.capture(), eq("DOCUMENT"),
+                eq("recoverable.docx"), any(), any());
         assertTrue(content.getValue().contains("1920x1080"));
     }
 

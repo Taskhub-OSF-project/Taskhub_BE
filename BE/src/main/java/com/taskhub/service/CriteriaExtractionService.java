@@ -25,7 +25,6 @@ import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -33,6 +32,9 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+import java.util.zip.ZipOutputStream;
 
 /**
  * Service gợi ý criteria từ mô tả task (text) và / hoặc nội dung file brief.
@@ -59,6 +61,8 @@ public class CriteriaExtractionService {
     private static final int VISION_MAX_HEIGHT = 7000;
     private static final long MAX_EMBEDDED_IMAGE_PIXELS = 12_000_000;
     private static final long MAX_TOTAL_EMBEDDED_IMAGE_PIXELS = 24_000_000;
+    private static final long MAX_DOCX_UNCOMPRESSED_BYTES = 50L * 1024 * 1024;
+    private static final int MAX_DOCX_ENTRIES = 5_000;
     private final TaskHubAiService aiService;
 
     public CriteriaExtractionService(TaskHubAiService aiService) {
@@ -192,8 +196,23 @@ public class CriteriaExtractionService {
     }
 
     private FileContent readDocxFile(MultipartFile file) {
-        try (InputStream is = file.getInputStream();
-             XWPFDocument doc = new XWPFDocument(is);
+        try {
+            byte[] original = file.getBytes();
+            try {
+                return extractDocxContent(original, file.getSize());
+            } catch (Exception firstError) {
+                byte[] sanitized = sanitizeDocxPackage(original);
+                log.info("Retrying DOCX {} after removing invalid ZIP entries", file.getOriginalFilename());
+                return extractDocxContent(sanitized, file.getSize());
+            }
+        } catch (NoClassDefFoundError | Exception e) {
+            log.warn("DOCX read failed ({}): {}", file.getOriginalFilename(), e.getMessage());
+            return new FileContent(file.getSize(), null, "docx-read-unavailable", null, null);
+        }
+    }
+
+    private FileContent extractDocxContent(byte[] bytes, long fileSize) throws Exception {
+        try (XWPFDocument doc = new XWPFDocument(new ByteArrayInputStream(bytes));
              XWPFWordExtractor extractor = new XWPFWordExtractor(doc)) {
             Set<String> sections = new LinkedHashSet<>();
             String extractedText = extractor.getText();
@@ -223,11 +242,45 @@ public class CriteriaExtractionService {
                 embeddedImages = createVisionContactSheet(images);
             }
             return new FileContent(
-                    file.getSize(), preview(text), "docx: " + text.length() + " chars",
+                    fileSize, preview(text), "docx: " + text.length() + " chars",
                     embeddedImages, embeddedImages == null ? null : "jpeg");
-        } catch (NoClassDefFoundError | Exception e) {
-            log.warn("DOCX read failed ({}): {}", file.getOriginalFilename(), e.getMessage());
-            return new FileContent(file.getSize(), null, "docx-read-unavailable", null, null);
+        }
+    }
+
+    private byte[] sanitizeDocxPackage(byte[] original) throws Exception {
+        try (ZipInputStream input = new ZipInputStream(new ByteArrayInputStream(original));
+             ByteArrayOutputStream bytes = new ByteArrayOutputStream(original.length);
+             ZipOutputStream output = new ZipOutputStream(bytes)) {
+            Set<String> names = new LinkedHashSet<>();
+            byte[] buffer = new byte[8192];
+            long uncompressedBytes = 0;
+            int entries = 0;
+            ZipEntry entry;
+            while ((entry = input.getNextEntry()) != null) {
+                if (++entries > MAX_DOCX_ENTRIES) {
+                    throw new IllegalArgumentException("DOCX contains too many ZIP entries");
+                }
+                String name = entry.getName() == null ? "" : entry.getName().replace('\\', '/').trim();
+                if (name.isBlank() || name.startsWith("/") || name.equals("..")
+                        || name.startsWith("../") || name.contains("/../") || !names.add(name)) {
+                    input.closeEntry();
+                    continue;
+                }
+                output.putNextEntry(new ZipEntry(name));
+                int read;
+                while ((read = input.read(buffer)) != -1) {
+                    uncompressedBytes += read;
+                    if (uncompressedBytes > MAX_DOCX_UNCOMPRESSED_BYTES) {
+                        throw new IllegalArgumentException("DOCX expands beyond the safe limit");
+                    }
+                    output.write(buffer, 0, read);
+                }
+                output.closeEntry();
+                input.closeEntry();
+            }
+            if (names.isEmpty()) throw new IllegalArgumentException("DOCX ZIP package is empty");
+            output.finish();
+            return bytes.toByteArray();
         }
     }
 

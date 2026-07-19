@@ -370,7 +370,14 @@ public class TaskHubAiService {
     ) {
         String prompt = buildImageBriefPrompt(fileName, currentTaskDescription, extraRequirements);
         String reply = aiModelClient.generateWithImage(prompt, imageBytes, imageFormat, 0.1f, 4096);
-        return parseTaskBriefResponse(reply, fileName, "IMAGE");
+        try {
+            return parseTaskBriefResponse(reply, fileName, "IMAGE");
+        } catch (TaskHubException firstError) {
+            log.info("Retrying image brief extraction because the first model response was not usable");
+            String repairedReply = aiModelClient.generateWithImage(
+                    prompt + jsonRepairInstruction(), imageBytes, imageFormat, 0.0f, 4096);
+            return parseTaskBriefResponse(repairedReply, fileName, "IMAGE");
+        }
     }
 
     /**
@@ -391,7 +398,23 @@ public class TaskHubAiService {
         String prompt = buildTextBriefPrompt(
                 briefContent, detectedType, fileName, currentTaskDescription, extraRequirements);
         String reply = aiModelClient.generate(prompt, 0.1f, 4096);
-        return parseTaskBriefResponse(reply, fileName, detectedType);
+        try {
+            return parseTaskBriefResponse(reply, fileName, detectedType);
+        } catch (TaskHubException firstError) {
+            log.info("Retrying text brief extraction because the first model response was not usable");
+            String repairedReply = aiModelClient.generate(prompt + jsonRepairInstruction(), 0.0f, 4096);
+            return parseTaskBriefResponse(repairedReply, fileName, detectedType);
+        }
+    }
+
+    private String jsonRepairInstruction() {
+        return """
+
+                QUAN TRỌNG: Câu trả lời trước không phải JSON hợp lệ. Hãy phân tích lại từ đầu và chỉ trả về
+                đúng một JSON object theo schema đã yêu cầu. Không mở đầu bằng lời giải thích, không dùng markdown,
+                không xin lỗi. Nếu brief thiếu chi tiết, vẫn tạo các tiêu chí đo được từ nội dung nhìn thấy và ghi
+                phần chưa chắc chắn vào warnings; không được bỏ trống mảng criteria.
+                """;
     }
 
     private String buildImageBriefPrompt(String fileName, String currentTaskDescription,
@@ -556,7 +579,8 @@ public class TaskHubAiService {
         } catch (Exception e) {
             log.warn("Failed to parse task brief from Bedrock: {}", e.getMessage());
             throw TaskHubException.badRequest(
-                    "AI could not read a consistent task brief from this file. Try a clearer or valid file.");
+                    "AI chưa đọc được tiêu chí rõ ràng từ file này. Hệ thống đã thử lại; "
+                            + "hãy kiểm tra nội dung file hoặc tải lên bản rõ nét hơn.");
         }
     }
 
