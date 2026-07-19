@@ -153,12 +153,16 @@ spring:
     baseline-on-migrate: true
 
 ---
-# Production profile
+# Production profile (AWS Lambda)
 spring:
   config:
     activate:
       on-profile: prod
   jpa:
+    hibernate:
+      # Flyway owns the schema in production; Hibernate must not re-validate before
+      # migrations have run (avoids startup crash when a new migration adds columns).
+      ddl-auto: none
     show-sql: false
 
 logging:
