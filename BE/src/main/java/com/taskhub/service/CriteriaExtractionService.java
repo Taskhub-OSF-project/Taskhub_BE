@@ -6,15 +6,33 @@ import com.taskhub.exception.TaskHubException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.rendering.ImageType;
+import org.apache.pdfbox.rendering.PDFRenderer;
 import org.apache.pdfbox.text.PDFTextStripper;
+import org.apache.poi.xwpf.extractor.XWPFWordExtractor;
+import org.apache.poi.xwpf.usermodel.XWPFPictureData;
+import org.apache.poi.xwpf.usermodel.XWPFDocument;
+import org.apache.xmlbeans.XmlCursor;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
+import javax.imageio.stream.ImageInputStream;
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * Service gợi ý criteria từ mô tả task (text) và / hoặc nội dung file brief.
@@ -35,7 +53,12 @@ public class CriteriaExtractionService {
     private static final long MAX_BYTES = 15 * 1024 * 1024;
     private static final long MAX_IMAGE_BYTES = 5 * 1024 * 1024;
     private static final int MAX_TEXT_PREVIEW = 8000;
-    private static final int MAX_CHARS_PER_PAGE = 2000;
+    private static final int MIN_READABLE_CHARACTERS = 40;
+    private static final int MAX_VISION_PAGES = 4;
+    private static final int VISION_MAX_WIDTH = 1200;
+    private static final int VISION_MAX_HEIGHT = 7000;
+    private static final long MAX_EMBEDDED_IMAGE_PIXELS = 12_000_000;
+    private static final long MAX_TOTAL_EMBEDDED_IMAGE_PIXELS = 24_000_000;
     private final TaskHubAiService aiService;
 
     public CriteriaExtractionService(TaskHubAiService aiService) {
@@ -84,6 +107,14 @@ public class CriteriaExtractionService {
         }
 
         FileContent content = readContent(file, type);
+        if (!hasMeaningfulText(content.preview) && content.visionBytes != null) {
+            return aiService.extractTaskBriefFromImage(
+                    content.visionBytes,
+                    content.visionFormat,
+                    fileName,
+                    combineContext(taskDescription, content.preview),
+                    extraRequirements);
+        }
         if (content.preview == null || content.preview.isBlank()) {
             throw unreadableBrief(type);
         }
@@ -111,16 +142,17 @@ public class CriteriaExtractionService {
             case "TEXT" -> readTextFile(file);
             case "PDF" -> readPdfFile(file);
             case "DOCUMENT" -> readDocxFile(file);
-            default -> new FileContent(file.getSize(), null, "binary-or-image: " + file.getSize() + " bytes");
+            default -> new FileContent(
+                    file.getSize(), null, "binary-or-image: " + file.getSize() + " bytes", null, null);
         };
     }
 
     private FileContent readTextFile(MultipartFile file) {
         try {
             String text = new String(file.getBytes(), StandardCharsets.UTF_8);
-            return new FileContent(file.getSize(), preview(text), text.length() + " chars");
+            return new FileContent(file.getSize(), preview(text), text.length() + " chars", null, null);
         } catch (Exception e) {
-            return new FileContent(file.getSize(), null, "read-failed: " + e.getMessage());
+            return new FileContent(file.getSize(), null, "read-failed: " + e.getMessage(), null, null);
         }
     }
 
@@ -139,36 +171,184 @@ public class CriteriaExtractionService {
             for (int page = startPage; page <= maxPages && allText.length() < MAX_TEXT_PREVIEW; page++) {
                 stripper.setStartPage(page);
                 stripper.setEndPage(page);
-                String pageText = stripper.getText(doc);
-                allText.append("--- Trang ").append(page).append(" ---\n");
-                allText.append(pageText).append("\n");
+                String pageText = stripper.getText(doc).trim();
+                if (!pageText.isBlank()) {
+                    allText.append("--- Trang ").append(page).append(" ---\n");
+                    allText.append(pageText).append("\n");
+                }
             }
 
             String text = allText.toString();
             String summary = pageCount + " trang, đã đọc " + maxPages + " trang, " + text.length() + " ký tự";
-            return new FileContent(file.getSize(), preview(text), summary);
+            byte[] renderedPages = hasMeaningfulText(text) ? null : renderPdfForVision(doc);
+            return new FileContent(
+                    file.getSize(), preview(text), summary,
+                    renderedPages, renderedPages == null ? null : "jpeg");
         } catch (Exception e) {
             log.warn("PDF read failed ({}): {}", file.getOriginalFilename(), e.getMessage());
-            return new FileContent(file.getSize(), null, "pdf-read-failed: " + e.getMessage());
+            return new FileContent(
+                    file.getSize(), null, "pdf-read-failed: " + e.getMessage(), null, null);
         }
     }
 
     private FileContent readDocxFile(MultipartFile file) {
         try (InputStream is = file.getInputStream();
-             org.apache.poi.xwpf.usermodel.XWPFDocument doc = new org.apache.poi.xwpf.usermodel.XWPFDocument(is)) {
-            StringBuilder sb = new StringBuilder();
-            doc.getParagraphs().forEach(p -> sb.append(p.getText()).append('\n'));
-            for (org.apache.poi.xwpf.usermodel.XWPFTable tbl : doc.getTables()) {
-                for (org.apache.poi.xwpf.usermodel.XWPFTableRow row : tbl.getRows()) {
-                    row.getTableCells().forEach(c -> sb.append(c.getText()).append('\t'));
-                    sb.append('\n');
+             XWPFDocument doc = new XWPFDocument(is);
+             XWPFWordExtractor extractor = new XWPFWordExtractor(doc)) {
+            Set<String> sections = new LinkedHashSet<>();
+            String extractedText = extractor.getText();
+            addTextSection(sections, extractedText);
+
+            // XML text nodes include drawing/text-box content which is not exposed
+            // as top-level paragraphs or tables by XWPFDocument.
+            addMissingXmlText(sections, extractedText, extractXmlText(doc));
+            doc.getHeaderList().forEach(header -> addTextSection(sections, header.getText()));
+            doc.getFooterList().forEach(footer -> addTextSection(sections, footer.getText()));
+
+            String text = String.join("\n", sections);
+            byte[] embeddedImages = null;
+            if (!hasMeaningfulText(text) && !doc.getAllPictures().isEmpty()) {
+                List<BufferedImage> images = new ArrayList<>();
+                long totalPixels = 0;
+                for (XWPFPictureData picture : doc.getAllPictures()) {
+                    BufferedImage image = readBoundedImage(picture.getData());
+                    if (image != null) {
+                        long pixels = (long) image.getWidth() * image.getHeight();
+                        if (totalPixels + pixels > MAX_TOTAL_EMBEDDED_IMAGE_PIXELS) break;
+                        images.add(image);
+                        totalPixels += pixels;
+                    }
+                    if (images.size() >= 6) break;
                 }
+                embeddedImages = createVisionContactSheet(images);
             }
-            String text = sb.toString();
-            return new FileContent(file.getSize(), preview(text), "docx: " + text.length() + " chars");
+            return new FileContent(
+                    file.getSize(), preview(text), "docx: " + text.length() + " chars",
+                    embeddedImages, embeddedImages == null ? null : "jpeg");
         } catch (NoClassDefFoundError | Exception e) {
             log.warn("DOCX read failed ({}): {}", file.getOriginalFilename(), e.getMessage());
-            return new FileContent(file.getSize(), null, "docx-read-unavailable");
+            return new FileContent(file.getSize(), null, "docx-read-unavailable", null, null);
+        }
+    }
+
+    private void addTextSection(Set<String> sections, String value) {
+        if (value == null) return;
+        String normalized = value.replace('\u0000', ' ').replaceAll("[ \\t]+", " ")
+                .replaceAll("\\R{3,}", "\n\n").trim();
+        if (!normalized.isBlank()) sections.add(normalized);
+    }
+
+    private String extractXmlText(XWPFDocument document) {
+        StringBuilder text = new StringBuilder();
+        try (XmlCursor cursor = document.getDocument().newCursor()) {
+            cursor.selectPath("declare namespace w='http://schemas.openxmlformats.org/wordprocessingml/2006/main' .//w:t");
+            while (cursor.toNextSelection()) {
+                String value = cursor.getTextValue();
+                if (value != null && !value.isBlank()) text.append(value.trim()).append('\n');
+            }
+        } catch (Exception e) {
+            log.debug("Could not inspect DOCX text-box XML: {}", e.getMessage());
+        }
+        return text.toString();
+    }
+
+    private void addMissingXmlText(Set<String> sections, String extractedText, String xmlText) {
+        String searchable = extractedText == null ? "" : extractedText.replaceAll("\\s+", " ");
+        for (String line : xmlText.split("\\R")) {
+            String normalized = line.replaceAll("\\s+", " ").trim();
+            if (!normalized.isBlank() && !searchable.contains(normalized)) sections.add(normalized);
+        }
+    }
+
+    private byte[] renderPdfForVision(PDDocument doc) {
+        try {
+            PDFRenderer renderer = new PDFRenderer(doc);
+            List<BufferedImage> pages = new ArrayList<>();
+            int pageLimit = Math.min(doc.getNumberOfPages(), MAX_VISION_PAGES);
+            for (int page = 0; page < pageLimit; page++) {
+                float pageWidth = Math.max(1f, doc.getPage(page).getCropBox().getWidth());
+                float pageHeight = Math.max(1f, doc.getPage(page).getCropBox().getHeight());
+                float maxPageHeight = (float) VISION_MAX_HEIGHT / Math.max(1, pageLimit);
+                float scale = Math.min(100f / 72f, Math.min(
+                        VISION_MAX_WIDTH / pageWidth,
+                        maxPageHeight / pageHeight));
+                pages.add(renderer.renderImage(page, scale, ImageType.RGB));
+            }
+            return createVisionContactSheet(pages);
+        } catch (Exception e) {
+            log.warn("Could not render scanned PDF for vision: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private BufferedImage readBoundedImage(byte[] bytes) {
+        try (ImageInputStream input = ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
+            if (input == null) return null;
+            Iterator<ImageReader> readers = ImageIO.getImageReaders(input);
+            if (!readers.hasNext()) return null;
+            ImageReader reader = readers.next();
+            try {
+                reader.setInput(input, true, true);
+                int width = reader.getWidth(0);
+                int height = reader.getHeight(0);
+                long pixels = (long) width * height;
+                if (width <= 0 || height <= 0 || width > 8000 || height > 8000
+                        || pixels > MAX_EMBEDDED_IMAGE_PIXELS) {
+                    log.warn("Skipping oversized DOCX image: {}x{}", width, height);
+                    return null;
+                }
+                return reader.read(0);
+            } finally {
+                reader.dispose();
+            }
+        } catch (Exception e) {
+            log.debug("Could not decode embedded DOCX image: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private byte[] createVisionContactSheet(List<BufferedImage> images) {
+        if (images == null || images.isEmpty()) return null;
+        int widest = images.stream().mapToInt(BufferedImage::getWidth).max().orElse(1);
+        long totalHeight = images.stream().mapToLong(BufferedImage::getHeight).sum()
+                + (long) Math.max(0, images.size() - 1) * 12;
+        double scale = Math.min(1d, Math.min(
+                (double) VISION_MAX_WIDTH / widest,
+                (double) VISION_MAX_HEIGHT / totalHeight));
+        int canvasWidth = Math.max(1, (int) Math.ceil(widest * scale));
+        int canvasHeight = Math.max(1, images.stream()
+                .mapToInt(image -> (int) Math.ceil(image.getHeight() * scale)).sum()
+                + Math.max(0, images.size() - 1) * 12);
+
+        BufferedImage canvas = new BufferedImage(canvasWidth, canvasHeight, BufferedImage.TYPE_INT_RGB);
+        Graphics2D graphics = canvas.createGraphics();
+        try {
+            graphics.setColor(Color.WHITE);
+            graphics.fillRect(0, 0, canvasWidth, canvasHeight);
+            graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
+                    RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+            int y = 0;
+            for (BufferedImage image : images) {
+                int width = Math.max(1, (int) Math.ceil(image.getWidth() * scale));
+                int height = Math.max(1, (int) Math.ceil(image.getHeight() * scale));
+                graphics.drawImage(image, (canvasWidth - width) / 2, y, width, height, null);
+                y += height + 12;
+            }
+        } finally {
+            graphics.dispose();
+        }
+
+        try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            if (!ImageIO.write(canvas, "jpeg", output)) return null;
+            byte[] bytes = output.toByteArray();
+            if (bytes.length > MAX_IMAGE_BYTES) {
+                log.warn("Rendered document is too large for vision: {} bytes", bytes.length);
+                return null;
+            }
+            return bytes;
+        } catch (Exception e) {
+            log.warn("Could not encode document preview for vision: {}", e.getMessage());
+            return null;
         }
     }
 
@@ -179,7 +359,26 @@ public class CriteriaExtractionService {
         return trimmed.substring(0, MAX_TEXT_PREVIEW) + "\n... [+" + (trimmed.length() - MAX_TEXT_PREVIEW) + " chars]";
     }
 
-    private record FileContent(long size, String preview, String summary) {}
+    private boolean hasMeaningfulText(String text) {
+        if (text == null || text.isBlank()) return false;
+        return text.codePoints().filter(Character::isLetterOrDigit).limit(MIN_READABLE_CHARACTERS)
+                .count() >= MIN_READABLE_CHARACTERS;
+    }
+
+    private String combineContext(String taskDescription, String extractedText) {
+        if (extractedText == null || extractedText.isBlank()) return taskDescription;
+        if (taskDescription == null || taskDescription.isBlank()) return extractedText;
+        return taskDescription.trim() + "\n\nPartial text extracted from the uploaded file:\n"
+                + extractedText.trim();
+    }
+
+    private record FileContent(
+            long size,
+            String preview,
+            String summary,
+            byte[] visionBytes,
+            String visionFormat
+    ) {}
 
     private String buildContext(String fileName, String type, FileContent content,
                                 String taskDescription, String extraRequirements) {

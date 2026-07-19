@@ -496,11 +496,14 @@ public class TaskHubAiService {
             }
 
             List<CriteriaExtractResponse.ExtractedCriterion> criteria = new ArrayList<>();
+            Set<String> seenCriteria = new LinkedHashSet<>();
             for (JsonNode item : criteriaNode) {
                 String text = firstNodeText(item, "text", "description", "criterion");
                 if (text == null || text.trim().length() < 12) continue;
+                String normalizedText = text.trim().toLowerCase(Locale.ROOT).replaceAll("\\s+", " ");
+                if (!seenCriteria.add(normalizedText)) continue;
                 List<Integer> related = new ArrayList<>();
-                JsonNode relatedNode = item.get("relatedCriteria");
+                JsonNode relatedNode = item.isObject() ? item.get("relatedCriteria") : null;
                 if (relatedNode != null && relatedNode.isArray()) {
                     relatedNode.forEach(value -> {
                         if (value.canConvertToInt() && value.asInt() > 0) related.add(value.asInt());
@@ -514,22 +517,26 @@ public class TaskHubAiService {
                         .build());
                 if (criteria.size() >= 8) break;
             }
-            if (criteria.size() < 3) {
-                throw new IllegalArgumentException("fewer than three usable criteria");
+            if (criteria.isEmpty()) {
+                throw new IllegalArgumentException("no usable criteria");
             }
 
             List<String> warnings = new ArrayList<>();
-            JsonNode warningsNode = root.get("warnings");
+            JsonNode warningsNode = root.isObject() ? root.get("warnings") : null;
             if (warningsNode != null && warningsNode.isArray()) {
                 warningsNode.forEach(value -> {
                     String warning = value.asText("").trim();
                     if (!warning.isBlank() && warnings.size() < 8) warnings.add(limitText(warning, 500));
                 });
             }
+            if (criteria.size() < 3) {
+                warnings.add("AI chỉ tìm thấy " + criteria.size()
+                        + " tiêu chí rõ ràng trong tài liệu; hãy kiểm tra và bổ sung trước khi đăng việc.");
+            }
             String category = firstNodeText(root, "suggestedCategory", "category");
             Set<String> allowedCategories = Set.of(
                     "Thiết kế", "Lập trình", "Viết lách", "Dịch thuật", "Marketing", "Khác");
-            if (!allowedCategories.contains(category)) category = "Khác";
+            if (category == null || !allowedCategories.contains(category)) category = "Khác";
 
             return CriteriaExtractResponse.builder()
                     .fileName(fileName)
@@ -538,7 +545,9 @@ public class TaskHubAiService {
                     .suggestedDescription(limitText(
                             firstNodeText(root, "suggestedDescription", "description"), 5000))
                     .suggestedCategory(category)
-                    .logicallyConsistent(root.path("logicallyConsistent").asBoolean(warnings.isEmpty()))
+                    .logicallyConsistent(root.isObject()
+                            ? root.path("logicallyConsistent").asBoolean(warnings.isEmpty())
+                            : warnings.isEmpty())
                     .consistencySummary(limitText(
                             firstNodeText(root, "consistencySummary", "logicSummary"), 1000))
                     .warnings(warnings)
@@ -1971,19 +1980,69 @@ public class TaskHubAiService {
                 value = value.substring(firstLine + 1, closing).trim();
             }
         }
+        if (isValidJson(value)) return value;
+
+        // Models occasionally wrap valid JSON in a short explanation. Extract the
+        // first balanced object/array while respecting quoted strings.
+        for (int start = 0; start < value.length(); start++) {
+            char opening = value.charAt(start);
+            if (opening != '{' && opening != '[') continue;
+            char closing = opening == '{' ? '}' : ']';
+            int depth = 0;
+            boolean inString = false;
+            boolean escaped = false;
+            for (int index = start; index < value.length(); index++) {
+                char current = value.charAt(index);
+                if (inString) {
+                    if (escaped) escaped = false;
+                    else if (current == '\\') escaped = true;
+                    else if (current == '"') inString = false;
+                    continue;
+                }
+                if (current == '"') {
+                    inString = true;
+                } else if (current == opening) {
+                    depth++;
+                } else if (current == closing && --depth == 0) {
+                    String candidate = value.substring(start, index + 1);
+                    if (isValidJson(candidate)) return candidate;
+                    break;
+                }
+            }
+        }
         return value;
     }
 
+    private boolean isValidJson(String value) {
+        if (value == null || value.isBlank()) return false;
+        try {
+            objectMapper.readTree(value);
+            return true;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
     private JsonNode firstArray(JsonNode root, String... fieldNames) {
-        if (root == null || !root.isObject()) return null;
+        if (root == null) return null;
+        if (root.isArray()) return root;
+        if (!root.isObject()) return null;
         for (String fieldName : fieldNames) {
             JsonNode candidate = root.get(fieldName);
             if (candidate != null && candidate.isArray()) return candidate;
+        }
+        for (String wrapper : List.of("data", "result", "output")) {
+            JsonNode nested = root.get(wrapper);
+            JsonNode candidate = firstArray(nested, fieldNames);
+            if (candidate != null) return candidate;
         }
         return null;
     }
 
     private String firstNodeText(JsonNode node, String... fieldNames) {
+        if (node == null) return null;
+        if (node.isTextual() && !node.asText().isBlank()) return node.asText().trim();
+        if (!node.isObject()) return null;
         for (String fieldName : fieldNames) {
             JsonNode candidate = node.get(fieldName);
             if (candidate != null && candidate.isValueNode() && !candidate.asText().isBlank()) {

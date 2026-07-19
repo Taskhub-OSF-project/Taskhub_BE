@@ -179,6 +179,68 @@ class TaskHubAiSecurityTest {
     }
 
     @Test
+    void textBrief_acceptsProseWrappedJsonAndStringCriteria() {
+        when(aiModelClient.generate(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyFloat(),
+                org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn("""
+                        Kết quả phân tích brief:
+                        {"suggestedTitle":"Bàn giao landing page","suggestedCategory":"Lập trình","criteria":[
+                        "Landing page hiển thị đúng trên màn hình từ 360px đến 1440px",
+                        "Điểm Lighthouse Performance trên mobile đạt tối thiểu 85 điểm",
+                        "Biểu mẫu liên hệ gửi thành công và hiển thị thông báo xác nhận"]}
+                        Hãy kiểm tra lại trước khi dùng.
+                        """);
+
+        var response = service.extractTaskBriefFromText(
+                "Xây landing page responsive có form liên hệ", "DOCUMENT", "brief.docx", null, null);
+
+        assertEquals("Bàn giao landing page", response.getSuggestedTitle());
+        assertEquals(3, response.getSuggestions().size());
+        assertEquals(
+                "Landing page hiển thị đúng trên màn hình từ 360px đến 1440px",
+                response.getSuggestions().get(0).getText());
+    }
+
+    @Test
+    void imageBrief_acceptsRootArrayReturnedByModel() {
+        when(aiModelClient.generateWithImage(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(byte[].class),
+                org.mockito.ArgumentMatchers.eq("jpeg"),
+                org.mockito.ArgumentMatchers.anyFloat(),
+                org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn("""
+                        ["Bàn giao đủ 5 ảnh JPG theo đúng kích thước trong brief",
+                         "Mỗi ảnh có dung lượng không vượt quá 2 MB và dùng hệ màu sRGB",
+                         "Toàn bộ nội dung chữ khớp chính xác với nội dung nguồn được cung cấp"]
+                        """);
+
+        var response = service.extractTaskBriefFromImage(
+                new byte[]{1, 2, 3}, "jpeg", "scan.pdf", null, null);
+
+        assertEquals(3, response.getSuggestions().size());
+    }
+
+    @Test
+    void briefKeepsPartialCriteriaInsteadOfReturningEmptyResult() {
+        when(aiModelClient.generate(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyFloat(),
+                org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn("""
+                        {"criteria":[{"text":"Bàn giao đúng một file PDF đã được ký duyệt"}]}
+                        """);
+
+        var response = service.extractTaskBriefFromText(
+                "Bàn giao một file PDF đã duyệt", "PDF", "brief.pdf", null, null);
+
+        assertEquals(1, response.getSuggestions().size());
+        org.junit.jupiter.api.Assertions.assertFalse(response.getWarnings().isEmpty());
+    }
+
+    @Test
     void criteriaFromJob_parsesObjectWrappedCriteria() {
         when(aiModelClient.generate(org.mockito.ArgumentMatchers.anyString()))
                 .thenReturn("""
