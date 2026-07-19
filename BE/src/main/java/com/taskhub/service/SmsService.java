@@ -1,23 +1,49 @@
 package com.taskhub.service;
 
-import com.twilio.Twilio;
-import com.twilio.rest.api.v2010.account.Message;
-import com.twilio.type.PhoneNumber;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.Base64;
 
 @Service
 @Slf4j
 public class SmsService {
-    @Value("${app.sms.enabled:false}")
-    private boolean smsEnabled;
-    @Value("${twilio.account-sid:}")
-    private String accountSid;
-    @Value("${twilio.auth-token:}")
-    private String authToken;
-    @Value("${twilio.phone-number:}")
-    private String twilioPhoneNumber;
+    private static final String TWILIO_MESSAGES_URL =
+            "https://api.twilio.com/2010-04-01/Accounts/%s/Messages.json";
+
+    private final boolean smsEnabled;
+    private final String accountSid;
+    private final String authToken;
+    private final String twilioPhoneNumber;
+    private final HttpClient httpClient;
+
+    @Autowired
+    public SmsService(
+            @Value("${app.sms.enabled:false}") boolean smsEnabled,
+            @Value("${twilio.account-sid:}") String accountSid,
+            @Value("${twilio.auth-token:}") String authToken,
+            @Value("${twilio.phone-number:}") String twilioPhoneNumber) {
+        this(smsEnabled, accountSid, authToken, twilioPhoneNumber,
+                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build());
+    }
+
+    SmsService(boolean smsEnabled, String accountSid, String authToken,
+               String twilioPhoneNumber, HttpClient httpClient) {
+        this.smsEnabled = smsEnabled;
+        this.accountSid = accountSid;
+        this.authToken = authToken;
+        this.twilioPhoneNumber = twilioPhoneNumber;
+        this.httpClient = httpClient;
+    }
 
     public boolean isDeliveryEnabled() {
         return smsEnabled && notBlank(accountSid) && notBlank(authToken) && notBlank(twilioPhoneNumber);
@@ -36,10 +62,27 @@ public class SmsService {
             throw new IllegalStateException("SMS delivery is disabled or incomplete");
         }
         try {
-            Twilio.init(accountSid, authToken);
-            Message.creator(new PhoneNumber(normalizePhone(phone)),
-                    new PhoneNumber(twilioPhoneNumber), message).create();
+            String form = "To=" + encode(normalizePhone(phone))
+                    + "&From=" + encode(twilioPhoneNumber)
+                    + "&Body=" + encode(message);
+            String credentials = Base64.getEncoder().encodeToString(
+                    (accountSid + ":" + authToken).getBytes(StandardCharsets.UTF_8));
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(TWILIO_MESSAGES_URL.formatted(accountSid)))
+                    .timeout(Duration.ofSeconds(20))
+                    .header("Authorization", "Basic " + credentials)
+                    .header("Content-Type", "application/x-www-form-urlencoded")
+                    .POST(HttpRequest.BodyPublishers.ofString(form))
+                    .build();
+            HttpResponse<Void> response = httpClient.send(request, HttpResponse.BodyHandlers.discarding());
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                throw new IllegalStateException("Twilio returned HTTP " + response.statusCode());
+            }
             log.info("Security SMS delivered to {}", maskPhone(phone));
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            log.error("Security SMS delivery interrupted for {}", maskPhone(phone));
+            throw new IllegalStateException("SMS delivery interrupted", ex);
         } catch (Exception ex) {
             log.error("Security SMS delivery failed for {}", maskPhone(phone));
             throw new IllegalStateException("SMS delivery failed", ex);
@@ -59,5 +102,9 @@ public class SmsService {
 
     private boolean notBlank(String value) {
         return value != null && !value.isBlank();
+    }
+
+    private String encode(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 }
