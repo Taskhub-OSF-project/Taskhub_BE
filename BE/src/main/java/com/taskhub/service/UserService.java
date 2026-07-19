@@ -137,7 +137,15 @@ public class UserService {
             user.setPortfolioUrl(trimToNull(req.getPortfolioUrl()));
         }
         if (req.getPhone() != null) {
-            user.setPhone(trimToNull(req.getPhone()));
+            String phone = normalizePhone(req.getPhone());
+            if (phone != null) {
+                userRepository.findByPhone(phone)
+                        .filter(existing -> !existing.getId().equals(userId))
+                        .ifPresent(existing -> {
+                            throw TaskHubException.badRequest("Phone number already registered");
+                        });
+            }
+            user.setPhone(phone);
         }
         if (req.getTitle() != null) {
             user.setTitle(trimToNull(req.getTitle()));
@@ -337,6 +345,16 @@ public class UserService {
         if (value == null) return null;
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String normalizePhone(String value) {
+        String phone = trimToNull(value);
+        if (phone == null) return null;
+        String normalized = phone.replaceAll("[\\s().-]", "");
+        if (!normalized.matches("^\\+?[0-9]{8,15}$")) {
+            throw TaskHubException.badRequest("Invalid phone number");
+        }
+        return normalized;
     }
 
     private void requireRoleSwitchAllowed(Long userId) {

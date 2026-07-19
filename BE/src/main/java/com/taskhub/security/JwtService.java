@@ -67,7 +67,12 @@ public class JwtService {
         if (bypassCheck) return;
 
         int bytes = jwtSecret == null ? 0 : jwtSecret.getBytes(StandardCharsets.UTF_8).length;
-        if (jwtSecret == null || DEV_DEFAULT_SECRET.equals(jwtSecret) || bytes < 32) {
+        String normalized = jwtSecret == null ? "" : jwtSecret.trim().toLowerCase();
+        boolean looksLikePlaceholder = normalized.contains("change-me")
+                || normalized.contains("changeme")
+                || normalized.contains("replace-me")
+                || normalized.contains("default-secret");
+        if (jwtSecret == null || DEV_DEFAULT_SECRET.equals(jwtSecret) || looksLikePlaceholder || bytes < 32) {
             throw new IllegalStateException(
                     "Insecure JWT secret for a non-dev profile. Set a strong APP_JWT_SECRET "
                             + "(>= 32 bytes, not the dev default).");

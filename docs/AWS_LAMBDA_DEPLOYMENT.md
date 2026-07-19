@@ -145,8 +145,8 @@ The SAM template sets:
 ```text
 JAVA_TOOL_OPTIONS=-XX:+TieredCompilation -XX:TieredStopAtLevel=1
 SPRING_PROFILES_ACTIVE=supabase
-SPRING_DATASOURCE_URL=jdbc:postgresql://aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require
-SPRING_DATASOURCE_USERNAME=postgres.wwduzspwejdyvbnjxkkz
+SPRING_DATASOURCE_URL=<managed PostgreSQL JDBC URL>
+SPRING_DATASOURCE_USERNAME=<managed PostgreSQL username>
 SPRING_DATASOURCE_PASSWORD=<SAM parameter>
 SPRING_JPA_HIBERNATE_DDL_AUTO=validate
 SPRING_JPA_SHOW_SQL=false

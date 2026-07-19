@@ -1,12 +1,12 @@
 package com.taskhub;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.taskhub.dto.request.LoginRequest;
 import com.taskhub.dto.request.RegisterRequest;
 import com.taskhub.dto.request.UpdateProfileRequest;
 import com.taskhub.enums.Role;
 import com.taskhub.repository.RefreshTokenRepository;
+import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -43,11 +43,16 @@ class AuthIntegrationTest {
                         .content(objectMapper.writeValueAsString(register)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.token").exists())
-                .andExpect(jsonPath("$.data.refreshToken").exists())
+                .andExpect(jsonPath("$.data.refreshToken").doesNotExist())
                 .andReturn();
 
-        JsonNode registerBody = objectMapper.readTree(registerResult.getResponse().getContentAsString());
-        String refreshToken = registerBody.path("data").path("refreshToken").asText();
+        String registerCookieHeader = registerResult.getResponse().getHeader("Set-Cookie");
+        String refreshToken = extractRefreshToken(registerCookieHeader);
+        assertNotNull(refreshToken);
+        assertTrue(registerCookieHeader.contains("HttpOnly"));
+        assertTrue(registerCookieHeader.contains("Secure"));
+        assertTrue(registerCookieHeader.contains("SameSite=None"));
+        assertTrue(registerCookieHeader.contains("Path=/api/auth"));
 
         LoginRequest login = LoginRequest.builder()
                 .email("authflow@test.com")
@@ -60,29 +65,33 @@ class AuthIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.token").exists());
 
-        String refreshBody = "{\"refreshToken\":\"" + refreshToken + "\"}";
+        mockMvc.perform(post("/api/auth/refresh")
+                        .cookie(new Cookie("taskhub_refresh", refreshToken)))
+                .andExpect(status().isUnauthorized());
+
         MvcResult refreshResult = mockMvc.perform(post("/api/auth/refresh")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(refreshBody))
+                        .header("X-Requested-With", "XMLHttpRequest")
+                        .cookie(new Cookie("taskhub_refresh", refreshToken)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.token").exists())
-                .andExpect(jsonPath("$.data.refreshToken").exists())
+                .andExpect(jsonPath("$.data.refreshToken").doesNotExist())
                 .andReturn();
 
-        JsonNode refreshJson = objectMapper.readTree(refreshResult.getResponse().getContentAsString());
-        String accessToken = refreshJson.path("data").path("token").asText();
-        String newRefreshToken = refreshJson.path("data").path("refreshToken").asText();
+        String accessToken = objectMapper.readTree(refreshResult.getResponse().getContentAsString())
+                .path("data").path("token").asText();
+        String newRefreshToken = extractRefreshToken(refreshResult.getResponse().getHeader("Set-Cookie"));
         assertNotEquals(refreshToken, newRefreshToken);
 
         mockMvc.perform(post("/api/auth/logout")
                         .header("Authorization", "Bearer " + accessToken)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"refreshToken\":\"" + newRefreshToken + "\"}"))
-                .andExpect(status().isOk());
+                        .header("X-Requested-With", "XMLHttpRequest")
+                        .cookie(new Cookie("taskhub_refresh", newRefreshToken)))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Set-Cookie", org.hamcrest.Matchers.containsString("Max-Age=0")));
 
         mockMvc.perform(post("/api/auth/refresh")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"refreshToken\":\"" + newRefreshToken + "\"}"))
+                        .header("X-Requested-With", "XMLHttpRequest")
+                        .cookie(new Cookie("taskhub_refresh", newRefreshToken)))
                 .andExpect(status().isUnauthorized());
     }
 
@@ -143,5 +152,13 @@ class AuthIntegrationTest {
 
         return objectMapper.readTree(loginResult.getResponse().getContentAsString())
                 .path("data").path("token").asText();
+    }
+
+    private String extractRefreshToken(String setCookieHeader) {
+        assertNotNull(setCookieHeader, "Refresh cookie must be issued");
+        String prefix = "taskhub_refresh=";
+        assertTrue(setCookieHeader.startsWith(prefix), "Unexpected refresh cookie name");
+        int separator = setCookieHeader.indexOf(';');
+        return setCookieHeader.substring(prefix.length(), separator < 0 ? setCookieHeader.length() : separator);
     }
 }

@@ -61,12 +61,8 @@ public class AiController {
      */
     @PostMapping("/public/chat")
     public ResponseEntity<AiChatResponse> publicChat(
-            @RequestBody Map<String, Object> body) {
-        String message = (String) body.get("message");
-        if (message == null || message.isBlank()) {
-            return ResponseEntity.badRequest().build();
-        }
-        String reply = aiService.publicChat(message);
+            @Valid @RequestBody PublicAiChatRequest request) {
+        String reply = aiService.publicChat(request.getMessage().trim());
         return ResponseEntity.ok(AiChatResponse.builder()
                 .reply(reply)
                 .sessionType("PUBLIC")

@@ -19,6 +19,8 @@ public class AuthResponse {
     private String email;
     private String fullName;
     private Role role;
+    private boolean emailVerified;
+    private boolean verificationRequired;
     /** Unix timestamp (seconds) when access token expires */
     private Long expiresAt;
 }

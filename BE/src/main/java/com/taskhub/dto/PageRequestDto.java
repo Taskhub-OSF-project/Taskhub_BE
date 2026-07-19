@@ -9,9 +9,13 @@ public class PageRequestDto {
     private static final java.util.Set<String> SAFE_SORT_FIELDS = java.util.Set.of(
             "id", "createdAt", "updatedAt", "deadline", "budget", "title", "status");
 
+    @Builder.Default
     private int page = 0;
+    @Builder.Default
     private int size = 20;
+    @Builder.Default
     private String sortBy = "id";
+    @Builder.Default
     private String sortDir = "desc";
 
     public int getPage() {

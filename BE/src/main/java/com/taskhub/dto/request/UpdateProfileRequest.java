@@ -1,5 +1,6 @@
 package com.taskhub.dto.request;
 
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.*;
 import java.util.List;
@@ -22,11 +23,14 @@ public class UpdateProfileRequest {
     @Size(max = 500)
     private String bio;
 
-    private List<String> skills;
+    @Size(max = 30)
+    private List<@Size(max = 80) String> skills;
 
+    @Size(max = 5000)
     private String experience;
 
     @Size(max = 500)
+    @Pattern(regexp = "(?i)^$|^https://[^\\s]+$", message = "Portfolio URL must use HTTPS")
     private String portfolioUrl;
 
     @Size(max = 20)
@@ -41,10 +45,13 @@ public class UpdateProfileRequest {
     @Size(max = 50)
     private String availability;
 
-    private List<String> languages;
+    @Size(max = 20)
+    private List<@Size(max = 80) String> languages;
 
-    private List<String> certifications;
+    @Size(max = 30)
+    private List<@Size(max = 255) String> certifications;
 
     @Size(max = 500)
+    @Pattern(regexp = "(?i)^$|^https://[^\\s]+$", message = "Avatar URL must use HTTPS")
     private String avatarUrl;
 }

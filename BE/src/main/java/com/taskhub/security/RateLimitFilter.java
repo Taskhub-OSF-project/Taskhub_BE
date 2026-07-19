@@ -13,6 +13,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
@@ -43,7 +45,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-        String clientIp = resolveClientIp(request);
+        String clientIp = request.getRemoteAddr();
         String path = request.getRequestURI();
 
         Limit limit = resolveLimit(path);
@@ -52,7 +54,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
             return;
         }
         long now = System.currentTimeMillis();
-        String key = path + ':' + clientIp;
+        String key = path + ':' + resolveRateLimitSubject(path, clientIp);
         TimedBucket timed = buckets.compute(key, (ignored, existing) -> {
             if (existing == null) {
                 return new TimedBucket(newBucket(limit.capacity(), limit.period()), now);
@@ -98,12 +100,15 @@ public class RateLimitFilter extends OncePerRequestFilter {
         return Bucket.builder().addLimit(limit).build();
     }
 
-    private static String resolveClientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",")[0].trim();
+    private static String resolveRateLimitSubject(String path, String clientIp) {
+        if (path.startsWith("/api/ai/") && !"/api/ai/public/chat".equals(path)) {
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication != null && authentication.isAuthenticated()
+                    && authentication.getPrincipal() instanceof com.taskhub.entity.User user) {
+                return "user:" + user.getId();
+            }
         }
-        return request.getRemoteAddr();
+        return "ip:" + clientIp;
     }
 
     private record Limit(int capacity, Duration period) {}

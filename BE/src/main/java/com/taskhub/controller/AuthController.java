@@ -8,31 +8,57 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import jakarta.servlet.http.HttpServletResponse;
+import com.taskhub.exception.TaskHubException;
+import com.taskhub.security.RefreshTokenCookieService;
 
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
 public class AuthController {
     private final AuthService authService;
+    private final RefreshTokenCookieService refreshTokenCookies;
 
     @PostMapping("/register")
-    public ResponseEntity<ApiResponse<AuthResponse>> register(@Valid @RequestBody RegisterRequest req) {
-        return ResponseEntity.ok(ApiResponse.ok("Registration successful", authService.register(req)));
+    public ResponseEntity<ApiResponse<AuthResponse>> register(@Valid @RequestBody RegisterRequest req,
+                                                               HttpServletResponse response) {
+        AuthResponse auth = prepareAuthResponse(response, authService.register(req));
+        return ResponseEntity.ok(ApiResponse.ok("Registration successful", auth));
     }
 
     @PostMapping("/login")
-    public ResponseEntity<ApiResponse<AuthResponse>> login(@Valid @RequestBody LoginRequest req) {
-        return ResponseEntity.ok(ApiResponse.ok("Login successful", authService.login(req)));
+    public ResponseEntity<ApiResponse<AuthResponse>> login(@Valid @RequestBody LoginRequest req,
+                                                            HttpServletResponse response) {
+        AuthResponse auth = prepareAuthResponse(response, authService.login(req));
+        return ResponseEntity.ok(ApiResponse.ok("Login successful", auth));
     }
 
     @PostMapping("/refresh")
-    public ResponseEntity<ApiResponse<AuthResponse>> refresh(@Valid @RequestBody RefreshTokenRequest req) {
-        return ResponseEntity.ok(ApiResponse.ok("Token refreshed", authService.refreshToken(req)));
+    public ResponseEntity<ApiResponse<AuthResponse>> refresh(
+            @RequestHeader(name = "X-Requested-With", required = false) String requestedWith,
+            @CookieValue(name = "taskhub_refresh", required = false) String cookieToken,
+            HttpServletResponse response) {
+        requireSpaRequest(requestedWith);
+        if (cookieToken == null || cookieToken.isBlank()) {
+            throw TaskHubException.unauthorized("Refresh token cookie is required");
+        }
+        AuthResponse auth = authService.refreshToken(
+                RefreshTokenRequest.builder().refreshToken(cookieToken).build());
+        return ResponseEntity.ok(ApiResponse.ok("Token refreshed",
+                refreshTokenCookies.moveRefreshTokenToCookie(response, auth)));
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<ApiResponse<Void>> logout(@RequestBody(required = false) LogoutRequest req) {
+    public ResponseEntity<ApiResponse<Void>> logout(
+            @RequestHeader(name = "X-Requested-With", required = false) String requestedWith,
+            @CookieValue(name = "taskhub_refresh", required = false) String cookieToken,
+            HttpServletResponse response) {
+        requireSpaRequest(requestedWith);
+        LogoutRequest req = cookieToken == null || cookieToken.isBlank()
+                ? null
+                : LogoutRequest.builder().refreshToken(cookieToken).build();
         authService.logout(AuthUtil.getCurrentUser().getId(), req);
+        refreshTokenCookies.clear(response);
         return ResponseEntity.ok(ApiResponse.ok("Logged out", null));
     }
 
@@ -71,5 +97,22 @@ public class AuthController {
     public ResponseEntity<ApiResponse<Void>> verifyEmail(@Valid @RequestBody VerifyEmailRequest req) {
         authService.verifyEmail(req);
         return ResponseEntity.ok(ApiResponse.ok("Email verified", null));
+    }
+
+    private AuthResponse prepareAuthResponse(HttpServletResponse response, AuthResponse auth) {
+        if (auth.isVerificationRequired()) {
+            String refreshToken = auth.getRefreshToken();
+            authService.logout(auth.getUserId(), LogoutRequest.builder().refreshToken(refreshToken).build());
+            auth.setToken(null);
+            auth.setRefreshToken(null);
+            return auth;
+        }
+        return refreshTokenCookies.moveRefreshTokenToCookie(response, auth);
+    }
+
+    private void requireSpaRequest(String requestedWith) {
+        if (!"XMLHttpRequest".equals(requestedWith)) {
+            throw TaskHubException.unauthorized("Missing CSRF request header");
+        }
     }
 }

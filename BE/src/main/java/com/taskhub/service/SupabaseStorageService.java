@@ -65,6 +65,8 @@ public class SupabaseStorageService implements FileStorageService {
                     .uri(endpoint)
                     .header(HttpHeaders.AUTHORIZATION, "Bearer " + properties.getServiceRoleKey())
                     .header("apikey", properties.getServiceRoleKey())
+                    .header(HttpHeaders.CONTENT_DISPOSITION,
+                            "attachment; filename=\"" + sanitizedFileName.replace("\"", "") + "\"")
                     .contentType(MediaType.parseMediaType(file.getContentType()))
                     .body(file.getBytes())
                     .retrieve()

@@ -3,10 +3,16 @@ Transform: AWS::Serverless-2016-10-31
 Description: TaskHub Spring Boot backend on AWS Lambda and API Gateway
 
 Parameters:
+  SpringDatasourceUrl:
+    Type: String
+    Description: Managed PostgreSQL JDBC URL
+  SpringDatasourceUsername:
+    Type: String
+    Description: Managed PostgreSQL username
   SpringDatasourcePassword:
     Type: String
     NoEcho: true
-    Description: Supabase database password
+    Description: Managed PostgreSQL password
   AppJwtSecret:
     Type: String
     NoEcho: true
@@ -23,12 +29,11 @@ Parameters:
     Description: Optional Supabase service role key for Storage integration
   AppMailDeliveryEnabled:
     Type: String
-    Default: 'false'
+    Default: 'true'
     AllowedValues: ['true', 'false']
     Description: Enable AWS SES security emails
   AppMailFromEmail:
     Type: String
-    Default: ''
     Description: Verified SES sender address; required when mail delivery is enabled
 
 Globals:
@@ -41,6 +46,16 @@ Globals:
     Tracing: Active
 
 Resources:
+  ServerlessApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      MethodSettings:
+        - ResourcePath: '/*'
+          HttpMethod: '*'
+          ThrottlingBurstLimit: 100
+          ThrottlingRateLimit: 50
+
   TaskHubBackendFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -59,9 +74,9 @@ Resources:
               Resource: '*'
       Environment:
         Variables:
-          SPRING_PROFILES_ACTIVE: supabase
-          SPRING_DATASOURCE_URL: jdbc:postgresql://aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres?sslmode=require&prepareThreshold=0
-          SPRING_DATASOURCE_USERNAME: postgres.wwduzspwejdyvbnjxkkz
+          SPRING_PROFILES_ACTIVE: supabase,prod
+          SPRING_DATASOURCE_URL: !Ref SpringDatasourceUrl
+          SPRING_DATASOURCE_USERNAME: !Ref SpringDatasourceUsername
           SPRING_DATASOURCE_PASSWORD: !Ref SpringDatasourcePassword
           SPRING_JPA_HIBERNATE_DDL_AUTO: validate
           SPRING_JPA_SHOW_SQL: 'false'
@@ -80,6 +95,9 @@ Resources:
           APP_BEDROCK_MAX_TOKENS: '4096'
           APP_CORS_ALLOWED_ORIGINS: https://taskhubvn.com,https://www.taskhubvn.com,https://main.d3lqxlf1rfgnci.amplifyapp.com
           APP_FRONTEND_BASE_URL: https://taskhubvn.com
+          APP_REQUIRE_EMAIL_VERIFICATION: 'true'
+          APP_REFRESH_COOKIE_SECURE: 'true'
+          APP_REFRESH_COOKIE_SAME_SITE: None
           APP_ADMIN_ENABLED: 'false'
           APP_MAIL_DELIVERY_ENABLED: !Ref AppMailDeliveryEnabled
           APP_MAIL_FROM_EMAIL: !Ref AppMailFromEmail
@@ -96,15 +114,17 @@ Resources:
         Api:
           Type: Api
           Properties:
+            RestApiId: !Ref ServerlessApi
             Path: /{proxy+}
             Method: ANY
         RootApi:
           Type: Api
           Properties:
+            RestApiId: !Ref ServerlessApi
             Path: /
             Method: ANY
 
 Outputs:
   ApiUrl:
     Description: API Gateway endpoint URL
-    Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/'
+    Value: !Sub 'https://${ServerlessApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/'

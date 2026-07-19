@@ -55,28 +55,43 @@ public class AuthService {
     @Value("${app.mail.frontend-base-url:http://localhost:5173}")
     private String frontendBaseUrl;
 
+    @Value("${app.auth.require-email-verification:false}")
+    private boolean requireEmailVerification;
+
     @Transactional
     public AuthResponse register(RegisterRequest req) {
+        String email = normalizeEmail(req.getEmail());
         if (req.getRole() == Role.ADMIN) {
             throw TaskHubException.forbidden("Admin accounts cannot be self-registered");
         }
-        if (userRepository.existsByEmail(req.getEmail()))
+        if (userRepository.existsByEmailIgnoreCase(email))
             throw TaskHubException.badRequest("Email already registered");
+
+        String phone = normalizePhone(req.getPhoneNumber() != null ? req.getPhoneNumber() : req.getPhone());
+        if (phone != null && userRepository.existsByPhone(phone)) {
+            throw TaskHubException.badRequest("Phone number already registered");
+        }
 
         LocalDate dateOfBirth = req.getDateOfBirth();
         if (dateOfBirth == null && req.getAge() != null) {
             dateOfBirth = LocalDate.now().minusYears(req.getAge());
         }
+        if (dateOfBirth != null) {
+            int age = java.time.Period.between(dateOfBirth, LocalDate.now()).getYears();
+            if (dateOfBirth.isAfter(LocalDate.now()) || age < 10 || age > 120) {
+                throw TaskHubException.badRequest("Date of birth must represent an age from 10 to 120");
+            }
+        }
 
         User user = User.builder()
-                .email(req.getEmail())
+                .email(email)
                 .password(passwordEncoder.encode(req.getPassword()))
                 .fullName(req.getFullName())
                 .university(trimToNull(req.getUniversity()))
                 .major(trimToNull(req.getMajor()))
                 .role(req.getRole())
                 .dateOfBirth(dateOfBirth)
-                .phone(trimToNull(req.getPhoneNumber() != null ? req.getPhoneNumber() : req.getPhone()))
+                .phone(phone)
                 .isVerified(false)
                 .build();
         user = userRepository.save(user);
@@ -101,7 +116,8 @@ public class AuthService {
             throw TaskHubException.badRequest("Vui lòng nhập mật khẩu");
         }
 
-        User user = userRepository.findByEmail(req.getEmail())
+        String email = normalizeEmail(req.getEmail());
+        User user = userRepository.findByEmailIgnoreCase(email)
                 .orElseThrow(() -> {
                     auditService.record("LOGIN_FAILURE", req.getEmail(), "Email not found");
                     return TaskHubException.badRequest("Email hoặc mật khẩu không đúng");
@@ -177,7 +193,7 @@ public class AuthService {
 
     @Transactional
     public void forgotPassword(ForgotPasswordRequest req) {
-        userRepository.findByEmail(req.getEmail()).ifPresent(user -> {
+        userRepository.findByEmailIgnoreCase(normalizeEmail(req.getEmail())).ifPresent(user -> {
             if (!mailService.isDeliveryEnabled()) {
                 auditService.record("PASSWORD_RESET_DELIVERY_DISABLED", user.getEmail(),
                         "Password reset provider is disabled");
@@ -192,7 +208,13 @@ public class AuthService {
             String rawToken = TokenHasher.randomToken();
             String tokenHash = TokenHasher.sha256(rawToken);
 
-            String resetLink = frontendBaseUrl + "/recover?token=" + rawToken;
+            String resetLink = frontendBaseUrl + "/recover#token=" + rawToken;
+            verificationTokenRepository.save(VerificationToken.builder()
+                    .userId(user.getId())
+                    .tokenHash(tokenHash)
+                    .type(VerificationTokenType.PASSWORD_RESET)
+                    .expiresAt(LocalDateTime.now().plusHours(1))
+                    .build());
             try {
                 mailService.sendPasswordReset(user.getEmail(), resetLink);
             } catch (RuntimeException ex) {
@@ -200,26 +222,23 @@ public class AuthService {
                         "Password reset email delivery failed");
                 return;
             }
-            verificationTokenRepository.save(VerificationToken.builder()
-                    .userId(user.getId())
-                    .tokenHash(tokenHash)
-                    .type(VerificationTokenType.PASSWORD_RESET)
-                    .expiresAt(LocalDateTime.now().plusHours(1))
-                    .build());
-
             auditService.record("FORGOT_PASSWORD_INITIATED", user.getEmail(), "Password reset email sent");
         });
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public Map<String, Object> recoverAccount(RecoverAccountRequest req) {
         String channel = req.getChannel() == null ? "EMAIL" : req.getChannel().trim().toUpperCase();
         String contact = req.getContact() == null ? "" : req.getContact().trim();
         if (!"EMAIL".equals(channel) && !"SMS".equals(channel) && !"PHONE".equals(channel)) {
             throw TaskHubException.badRequest("Unsupported recovery channel");
         }
-        if ("SMS".equals(channel) || "PHONE".equals(channel)) userRepository.findByPhone(contact);
-        else userRepository.findByEmail(contact);
+        if ("SMS".equals(channel) || "PHONE".equals(channel)) {
+            requestPasswordReset(PasswordResetRequest.builder()
+                    .channel("SMS").identifier(normalizePhone(contact)).build());
+        } else {
+            forgotPassword(ForgotPasswordRequest.builder().email(normalizeEmail(contact)).build());
+        }
         return Map.of("message", "If the account exists, recovery instructions will be sent", "found", true);
     }
 
@@ -231,15 +250,16 @@ public class AuthService {
             throw TaskHubException.badRequest("Unsupported recovery channel");
         }
         if ("SMS".equals(channel) || "PHONE".equals(channel)) {
+            final String phoneIdentifier = normalizePhone(identifier);
             if (!smsService.isDeliveryEnabled()) {
                 return Map.of("message", "If the phone number exists, a reset code will be sent");
             }
-            userRepository.findByPhone(identifier).ifPresent(user -> {
-                otpTokenRepository.deleteActiveByPhoneAndType(identifier, "PASSWORD_RESET");
+            userRepository.findByPhone(phoneIdentifier).ifPresent(user -> {
+                otpTokenRepository.deleteActiveByPhoneAndType(phoneIdentifier, "PASSWORD_RESET");
                 String code = String.format("%06d", SECURE_RANDOM.nextInt(1_000_000));
-                smsService.sendOtpRecovery(identifier, code);
+                smsService.sendOtpRecovery(phoneIdentifier, code);
                 otpTokenRepository.save(OtpToken.builder()
-                        .phone(identifier)
+                        .phone(phoneIdentifier)
                         .code(TokenHasher.sha256(code))
                         .type("PASSWORD_RESET")
                         .expiresAt(LocalDateTime.now().plusMinutes(5))
@@ -249,7 +269,7 @@ public class AuthService {
             return Map.of("message", "If the phone number exists, a reset code will be sent");
         }
 
-        forgotPassword(ForgotPasswordRequest.builder().email(identifier).build());
+        forgotPassword(ForgotPasswordRequest.builder().email(normalizeEmail(identifier)).build());
         return Map.of("message", "If the email exists, a reset link will be sent");
     }
 
@@ -259,6 +279,7 @@ public class AuthService {
         String code = req.getCode() == null ? "" : req.getCode().trim();
 
         if (!identifier.contains("@")) {
+            identifier = normalizePhone(identifier);
             OtpToken otp = otpTokenRepository.findValidOtp(identifier, "PASSWORD_RESET")
                     .orElseThrow(() -> TaskHubException.badRequest("Invalid or expired reset code"));
             byte[] expected = otp.getCode().getBytes(StandardCharsets.UTF_8);
@@ -366,6 +387,8 @@ public class AuthService {
                 .email(user.getEmail())
                 .fullName(user.getFullName())
                 .role(user.getRole())
+                .emailVerified(user.isEmailVerified())
+                .verificationRequired(requireEmailVerification && !user.isEmailVerified())
                 .build();
     }
 
@@ -392,7 +415,15 @@ public class AuthService {
         String rawToken = TokenHasher.randomToken();
         String tokenHash = TokenHasher.sha256(rawToken);
 
-        String verifyLink = frontendBaseUrl + "/verify-email?token=" + rawToken;
+        verificationTokenRepository.invalidateActive(
+                user.getId(), VerificationTokenType.EMAIL_VERIFICATION, LocalDateTime.now());
+        verificationTokenRepository.save(VerificationToken.builder()
+                .userId(user.getId())
+                .tokenHash(tokenHash)
+                .type(VerificationTokenType.EMAIL_VERIFICATION)
+                .expiresAt(LocalDateTime.now().plusHours(24))
+                .build());
+        String verifyLink = frontendBaseUrl + "/verify-email#token=" + rawToken;
         try {
             mailService.sendEmailVerification(user.getEmail(), verifyLink);
         } catch (RuntimeException ex) {
@@ -400,13 +431,20 @@ public class AuthService {
                     "Email verification delivery failed");
             return;
         }
-        verificationTokenRepository.save(VerificationToken.builder()
-                .userId(user.getId())
-                .tokenHash(tokenHash)
-                .type(VerificationTokenType.EMAIL_VERIFICATION)
-                .expiresAt(LocalDateTime.now().plusHours(24))
-                .build());
+    }
 
+    private String normalizeEmail(String value) {
+        return value == null ? "" : value.trim().toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private String normalizePhone(String value) {
+        String phone = trimToNull(value);
+        if (phone == null) return null;
+        String normalized = phone.replaceAll("[\\s().-]", "");
+        if (!normalized.matches("^\\+?[0-9]{8,15}$")) {
+            throw TaskHubException.badRequest("Invalid phone number");
+        }
+        return normalized;
     }
 
     private String trimToNull(String value) {

@@ -8,4 +8,3 @@ confirm_changeset = false
 resolve_s3 = true
 s3_prefix = "taskhub-backend"
 disable_rollback = false
-parameter_overrides = "SupabaseUrl=\"https://wwduzspwejdyvbnjxkkz.supabase.co\" SupabaseServiceRoleKey=\"\" AppMailDeliveryEnabled=\"false\" AppMailFromEmail=\"\""

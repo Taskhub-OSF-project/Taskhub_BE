@@ -14,12 +14,14 @@ import org.springframework.web.multipart.support.MissingServletRequestPartExcept
 
 import java.util.List;
 import java.util.Map;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Handler chuẩn hóa response lỗi cho toàn bộ API.
  * Thuộc module Exception, gom các lỗi nghiệp vụ/validation.
  */
 @RestControllerAdvice
+@Slf4j
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(AuthenticationException.class)
@@ -103,7 +105,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleGeneral(Exception ex) {
-        ex.printStackTrace();
+        log.error("Unhandled API exception", ex);
         return ResponseEntity.internalServerError().body(ApiResponse.error("Internal server error"));
     }
 }

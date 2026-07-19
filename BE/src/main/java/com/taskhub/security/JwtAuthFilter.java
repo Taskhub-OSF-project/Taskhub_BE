@@ -16,6 +16,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Value;
 
 @Component
 @Slf4j
@@ -23,6 +24,9 @@ import java.util.List;
 public class JwtAuthFilter extends OncePerRequestFilter {
     private final JwtService jwtService;
     private final UserRepository userRepository;
+
+    @Value("${app.auth.require-email-verification:false}")
+    private boolean requireEmailVerification;
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
@@ -36,7 +40,6 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         return path.equals("/")
                 || path.equals("/error")
                 || path.equals("/favicon.ico")
-                || path.startsWith("/swagger-ui")
                 || path.startsWith("/v3/api-docs")
                 || path.startsWith("/api/auth");
     }
@@ -45,8 +48,6 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
         String header = request.getHeader("Authorization");
-        String clientIp = resolveClientIp(request);
-
         if (header != null && header.startsWith("Bearer ")) {
             String token = header.substring(7);
 
@@ -55,6 +56,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 Long userId = jwtService.getUserIdFromToken(token);
                 userRepository.findById(userId)
                         .filter(user -> !Boolean.TRUE.equals(user.getIsBanned()))
+                        .filter(user -> !requireEmailVerification || user.isEmailVerified())
                         .ifPresent(user -> {
                     var auth = new UsernamePasswordAuthenticationToken(
                             user,
@@ -67,13 +69,5 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         }
 
         chain.doFilter(request, response);
-    }
-
-    private String resolveClientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) return forwarded.split(",")[0].trim();
-        String realIp = request.getHeader("X-Real-IP");
-        if (realIp != null && !realIp.isBlank()) return realIp.trim();
-        return request.getRemoteAddr();
     }
 }

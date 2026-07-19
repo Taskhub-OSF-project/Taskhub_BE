@@ -7,9 +7,7 @@ import com.taskhub.dto.response.ApiResponse;
 import com.taskhub.dto.response.ApplicationResponse;
 import com.taskhub.dto.response.TaskResponse;
 import com.taskhub.service.ApplicationService;
-import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,19 +23,8 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/applications")
 @RequiredArgsConstructor
-@Slf4j
 public class ApplicationController {
     private final ApplicationService applicationService;
-
-    @PostConstruct
-    public void printSwaggerUrl() {
-        log.info("Swagger UI: http://localhost:8080/swagger-ui.html");
-    }
-
-    @GetMapping("/")
-    public String home() {
-        return "redirect:/swagger-ui.html";
-    }
 
     @PostMapping("/task/{taskId}")
     @PreAuthorize("hasRole('STUDENT')")

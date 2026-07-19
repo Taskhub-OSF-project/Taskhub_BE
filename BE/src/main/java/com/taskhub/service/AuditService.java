@@ -104,10 +104,6 @@ public class AuditService {
         var attrs = RequestContextHolder.getRequestAttributes();
         if (!(attrs instanceof ServletRequestAttributes servletAttrs)) return "-";
         HttpServletRequest req = servletAttrs.getRequest();
-        String forwarded = req.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",")[0].trim();
-        }
         return req.getRemoteAddr();
     }
 

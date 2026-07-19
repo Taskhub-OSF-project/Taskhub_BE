@@ -10,12 +10,15 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import jakarta.servlet.http.HttpServletResponse;
+import com.taskhub.security.RefreshTokenCookieService;
 
 @RestController
 @RequestMapping("/api/users")
 @RequiredArgsConstructor
 public class UserController {
     private final UserService userService;
+    private final RefreshTokenCookieService refreshTokenCookies;
 
     @GetMapping("/me")
     public ResponseEntity<ApiResponse<UserProfileResponse>> getProfile() {
@@ -50,10 +53,12 @@ public class UserController {
     }
 
     @PostMapping("/switch-role")
-    public ResponseEntity<ApiResponse<com.taskhub.dto.response.AuthResponse>> switchRole() {
+    public ResponseEntity<ApiResponse<com.taskhub.dto.response.AuthResponse>> switchRole(
+            HttpServletResponse response) {
         Long userId = AuthUtil.getCurrentUser().getId();
-        return ResponseEntity.ok(ApiResponse.ok("Role switched",
-                userService.switchRoleAndReturnToken(userId)));
+        var auth = refreshTokenCookies.moveRefreshTokenToCookie(
+                response, userService.switchRoleAndReturnToken(userId));
+        return ResponseEntity.ok(ApiResponse.ok("Role switched", auth));
     }
 
     @PatchMapping("/change-password")

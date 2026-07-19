@@ -33,10 +33,10 @@ import java.util.List;
 /**
  * Spring Security configuration: stateless JWT, production CORS, secure headers.
  *
- * <p><b>CSRF:</b> Disabled intentionally — this is a stateless JWT API consumed by SPA/mobile
- * clients. CSRF protection applies to cookie-based sessions; Bearer tokens are not automatically
- * sent by browsers on cross-site requests. Ensure tokens are stored in memory/localStorage (not
- * HttpOnly cookies) or use SameSite cookies if switching to cookie auth later.
+ * <p><b>CSRF:</b> Disabled globally because protected API calls use an in-memory Bearer token,
+ * which browsers do not attach automatically. The two endpoints that consume the HttpOnly refresh
+ * cookie require {@code X-Requested-With: XMLHttpRequest}; this forces a CORS preflight and blocks
+ * cross-site form submissions from untrusted origins.
  */
 @Configuration
 @EnableWebSecurity
@@ -81,10 +81,6 @@ public class SecurityConfig {
                     a.requestMatchers(
                             "/",
                             "/error",
-                            "/swagger-ui.html",
-                            "/swagger-ui/**",
-                            "/v3/api-docs/**",
-                            "/v3/api-docs/swagger-config",
                             "/api/health",
                             "/api/auth/**",
                             "/api/ai/public/chat",
@@ -92,12 +88,15 @@ public class SecurityConfig {
                     ).permitAll();
                     a.requestMatchers("/api/ai/**").authenticated();
                     if (devProfile) {
-                        a.requestMatchers("/h2-console/**").permitAll();
+                        a.requestMatchers(
+                                "/h2-console/**",
+                                "/v3/api-docs/**"
+                        ).permitAll();
                     }
                     a.anyRequest().authenticated();
                 })
-                .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(rateLimitFilter, JwtAuthFilter.class);
 
         return http.build();
     }

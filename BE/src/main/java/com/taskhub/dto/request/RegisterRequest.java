@@ -11,7 +11,7 @@ public class RegisterRequest {
     private String email;
     @NotBlank @Size(min = 8, max = 128)
     private String password;
-    @NotBlank
+    @NotBlank @Size(max = 255)
     private String fullName;
 
     @Size(max = 100)
@@ -29,7 +29,9 @@ public class RegisterRequest {
     @NotNull
     private Role role;
 
+    @Past
     private LocalDate dateOfBirth;
 
+    @Size(max = 20)
     private String phone;
 }

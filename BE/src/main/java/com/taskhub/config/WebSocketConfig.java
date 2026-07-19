@@ -12,10 +12,11 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 @RequiredArgsConstructor
 public class WebSocketConfig implements WebSocketConfigurer {
     private final WebSocketSessionRegistry messagingHandler;
+    private final CorsProperties corsProperties;
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry.addHandler(messagingHandler, "/ws/chat")
-                .setAllowedOriginPatterns("*");
+                .setAllowedOrigins(corsProperties.getAllowedOrigins().toArray(String[]::new));
     }
 }
