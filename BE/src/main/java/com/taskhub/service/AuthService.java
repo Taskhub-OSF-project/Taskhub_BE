@@ -1,6 +1,8 @@
 package com.taskhub.service;
 
 import com.taskhub.dto.request.ForgotPasswordRequest;
+import com.taskhub.dto.request.EmailOtpResendRequest;
+import com.taskhub.dto.request.EmailOtpVerifyRequest;
 import com.taskhub.dto.request.LoginRequest;
 import com.taskhub.dto.request.LogoutRequest;
 import com.taskhub.dto.request.PasswordResetConfirmRequest;
@@ -12,16 +14,19 @@ import com.taskhub.dto.request.ResetPasswordRequest;
 import com.taskhub.dto.request.VerifyEmailRequest;
 import com.taskhub.dto.response.AuthResponse;
 import com.taskhub.entity.OtpToken;
+import com.taskhub.entity.EmailOtpChallenge;
 import com.taskhub.entity.RefreshToken;
 import com.taskhub.entity.User;
 import com.taskhub.entity.VerificationToken;
 import com.taskhub.enums.VerificationTokenType;
+import com.taskhub.enums.EmailOtpPurpose;
 import com.taskhub.enums.Role;
 import com.taskhub.repository.OtpTokenRepository;
 import com.taskhub.exception.TaskHubException;
 import com.taskhub.repository.RefreshTokenRepository;
 import com.taskhub.repository.UserRepository;
 import com.taskhub.repository.VerificationTokenRepository;
+import com.taskhub.repository.EmailOtpChallengeRepository;
 import com.taskhub.security.JwtService;
 import com.taskhub.service.mail.MailService;
 import com.taskhub.util.TokenHasher;
@@ -34,6 +39,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Map;
+import java.util.UUID;
 import java.security.MessageDigest;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
@@ -46,6 +52,7 @@ public class AuthService {
     private final RefreshTokenRepository refreshTokenRepository;
     private final OtpTokenRepository otpTokenRepository;
     private final VerificationTokenRepository verificationTokenRepository;
+    private final EmailOtpChallengeRepository emailOtpChallengeRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final AuditService auditService;
@@ -58,9 +65,15 @@ public class AuthService {
     @Value("${app.auth.require-email-verification:false}")
     private boolean requireEmailVerification;
 
+    @Value("${app.auth.require-login-email-otp:false}")
+    private boolean requireLoginEmailOtp;
+
     @Transactional
     public AuthResponse register(RegisterRequest req) {
         String email = normalizeEmail(req.getEmail());
+        if (requireEmailVerification && !mailService.isDeliveryEnabled()) {
+            throw TaskHubException.internalError("Email delivery is not configured");
+        }
         if (req.getRole() == Role.ADMIN) {
             throw TaskHubException.forbidden("Admin accounts cannot be self-registered");
         }
@@ -97,8 +110,10 @@ public class AuthService {
         user = userRepository.save(user);
 
         auditService.record("REGISTER", user.getEmail(), "User registered with role: " + user.getRole());
-        issueEmailVerificationToken(user);
-
+        if (requireEmailVerification) {
+            EmailOtpChallenge challenge = issueEmailOtp(user, EmailOtpPurpose.REGISTRATION);
+            return buildOtpChallengeResponse(user, challenge, true);
+        }
         return buildAuthResponse(user, generateAndSaveRefreshToken(user.getId()));
     }
 
@@ -132,8 +147,77 @@ public class AuthService {
             throw TaskHubException.unauthorized("Account is disabled");
         }
 
+        if (requireEmailVerification && !user.isEmailVerified()) {
+            EmailOtpChallenge challenge = issueEmailOtp(user, EmailOtpPurpose.REGISTRATION);
+            return buildOtpChallengeResponse(user, challenge, true);
+        }
+        if (requireLoginEmailOtp) {
+            EmailOtpChallenge challenge = issueEmailOtp(user, EmailOtpPurpose.LOGIN);
+            auditService.record("LOGIN_OTP_SENT", user.getEmail(), "Login OTP challenge issued");
+            return buildOtpChallengeResponse(user, challenge, false);
+        }
+
         auditService.record("LOGIN_SUCCESS", user.getEmail(), "User logged in");
         return buildAuthResponse(user, generateAndSaveRefreshToken(user.getId()));
+    }
+
+    @Transactional
+    public AuthResponse verifyEmailOtp(EmailOtpVerifyRequest req) {
+        EmailOtpChallenge challenge = findEmailOtpChallenge(req.getChallengeId());
+        LocalDateTime now = LocalDateTime.now();
+        if (challenge.isUsed() || !challenge.getExpiresAt().isAfter(now)
+                || challenge.getFailedAttempts() >= 5) {
+            throw TaskHubException.badRequest("OTP is invalid or expired");
+        }
+        if (!passwordEncoder.matches(req.getCode(), challenge.getCodeHash())) {
+            challenge.setFailedAttempts(challenge.getFailedAttempts() + 1);
+            if (challenge.getFailedAttempts() >= 5) challenge.setUsedAt(now);
+            emailOtpChallengeRepository.save(challenge);
+            throw TaskHubException.badRequest("OTP is invalid or expired");
+        }
+
+        challenge.setUsedAt(now);
+        emailOtpChallengeRepository.save(challenge);
+        User user = userRepository.findById(challenge.getUserId())
+                .orElseThrow(() -> TaskHubException.notFound("User not found"));
+        if (Boolean.TRUE.equals(user.getIsBanned())) {
+            throw TaskHubException.unauthorized("Account is disabled");
+        }
+        if (challenge.getPurpose() == EmailOtpPurpose.REGISTRATION) {
+            user.setEmailVerified(true);
+            userRepository.save(user);
+            auditService.record("EMAIL_VERIFY_SUCCESS", user.getEmail(), "Email verified using OTP");
+            return AuthResponse.builder()
+                    .userId(user.getId()).email(user.getEmail()).fullName(user.getFullName())
+                    .role(user.getRole()).emailVerified(true).build();
+        }
+        if (requireEmailVerification && !user.isEmailVerified()) {
+            throw TaskHubException.forbidden("Email verification is required");
+        }
+        auditService.record("LOGIN_SUCCESS", user.getEmail(), "User logged in using email OTP");
+        return buildAuthResponse(user, generateAndSaveRefreshToken(user.getId()));
+    }
+
+    @Transactional
+    public void resendEmailOtp(EmailOtpResendRequest req) {
+        EmailOtpChallenge challenge = findEmailOtpChallenge(req.getChallengeId());
+        LocalDateTime now = LocalDateTime.now();
+        if (challenge.isUsed()) throw TaskHubException.badRequest("OTP challenge is no longer active");
+        if (challenge.getLastSentAt().plusSeconds(60).isAfter(now)) {
+            throw TaskHubException.rateLimited("Please wait before requesting another OTP");
+        }
+        User user = userRepository.findById(challenge.getUserId())
+                .orElseThrow(() -> TaskHubException.notFound("User not found"));
+        if (challenge.getPurpose() == EmailOtpPurpose.REGISTRATION && user.isEmailVerified()) {
+            throw TaskHubException.badRequest("Email is already verified");
+        }
+        String code = generateOtpCode();
+        challenge.setCodeHash(passwordEncoder.encode(code));
+        challenge.setFailedAttempts(0);
+        challenge.setExpiresAt(now.plusMinutes(10));
+        challenge.setLastSentAt(now);
+        emailOtpChallengeRepository.save(challenge);
+        sendEmailOtp(user, challenge.getPurpose(), code);
     }
 
     @Transactional
@@ -390,6 +474,63 @@ public class AuthService {
                 .emailVerified(user.isEmailVerified())
                 .verificationRequired(requireEmailVerification && !user.isEmailVerified())
                 .build();
+    }
+
+    private AuthResponse buildOtpChallengeResponse(User user, EmailOtpChallenge challenge,
+                                                   boolean verificationRequired) {
+        return AuthResponse.builder()
+                .userId(user.getId())
+                .email(user.getEmail())
+                .fullName(user.getFullName())
+                .role(user.getRole())
+                .emailVerified(user.isEmailVerified())
+                .verificationRequired(verificationRequired)
+                .emailOtpRequired(true)
+                .otpChallengeId(challenge.getChallengeId().toString())
+                .otpPurpose(challenge.getPurpose().name())
+                .otpExpiresIn(600)
+                .build();
+    }
+
+    private EmailOtpChallenge issueEmailOtp(User user, EmailOtpPurpose purpose) {
+        if (!mailService.isDeliveryEnabled()) {
+            throw TaskHubException.internalError("Email delivery is not configured");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        emailOtpChallengeRepository.invalidateActive(user.getId(), purpose, now);
+        UUID challengeId = UUID.randomUUID();
+        String code = generateOtpCode();
+        EmailOtpChallenge challenge = emailOtpChallengeRepository.save(EmailOtpChallenge.builder()
+                .challengeId(challengeId)
+                .userId(user.getId())
+                .codeHash(passwordEncoder.encode(code))
+                .purpose(purpose)
+                .expiresAt(now.plusMinutes(10))
+                .lastSentAt(now)
+                .build());
+        sendEmailOtp(user, purpose, code);
+        return challenge;
+    }
+
+    private void sendEmailOtp(User user, EmailOtpPurpose purpose, String code) {
+        if (purpose == EmailOtpPurpose.REGISTRATION) {
+            mailService.sendRegistrationOtp(user.getEmail(), code);
+        } else {
+            mailService.sendLoginOtp(user.getEmail(), code);
+        }
+    }
+
+    private EmailOtpChallenge findEmailOtpChallenge(String rawChallengeId) {
+        try {
+            return emailOtpChallengeRepository.findByChallengeId(UUID.fromString(rawChallengeId))
+                    .orElseThrow(() -> TaskHubException.badRequest("OTP challenge is invalid"));
+        } catch (IllegalArgumentException ex) {
+            throw TaskHubException.badRequest("OTP challenge is invalid");
+        }
+    }
+
+    private String generateOtpCode() {
+        return String.format(java.util.Locale.ROOT, "%06d", SECURE_RANDOM.nextInt(1_000_000));
     }
 
     private String generateAndSaveRefreshToken(Long userId) {

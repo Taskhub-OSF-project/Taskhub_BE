@@ -21,6 +21,10 @@ public class AuthResponse {
     private Role role;
     private boolean emailVerified;
     private boolean verificationRequired;
+    private boolean emailOtpRequired;
+    private String otpChallengeId;
+    private String otpPurpose;
+    private long otpExpiresIn;
     /** Unix timestamp (seconds) when access token expires */
     private Long expiresAt;
 }

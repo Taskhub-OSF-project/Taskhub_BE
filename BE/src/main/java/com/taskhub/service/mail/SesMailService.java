@@ -53,6 +53,22 @@ public class SesMailService implements MailService {
                         + verifyLink + "\n\nIf you did not create this account, ignore this email.");
     }
 
+    @Override
+    public void sendRegistrationOtp(String toEmail, String code) {
+        send(toEmail, "Mã xác minh đăng ký TaskHub",
+                "Mã OTP đăng ký TaskHub của bạn là: " + code
+                        + "\n\nMã có hiệu lực trong 10 phút. Không chia sẻ mã này với bất kỳ ai."
+                        + "\n\nNếu bạn không tạo tài khoản, hãy bỏ qua email này.");
+    }
+
+    @Override
+    public void sendLoginOtp(String toEmail, String code) {
+        send(toEmail, "Mã đăng nhập TaskHub",
+                "Mã OTP đăng nhập TaskHub của bạn là: " + code
+                        + "\n\nMã có hiệu lực trong 10 phút. Không chia sẻ mã này với bất kỳ ai."
+                        + "\n\nNếu bạn không đăng nhập, hãy đổi mật khẩu ngay.");
+    }
+
     private void send(String toEmail, String subject, String text) {
         try {
             client.sendEmail(request -> request

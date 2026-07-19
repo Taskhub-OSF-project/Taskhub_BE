@@ -59,6 +59,10 @@ public class TaskHubException extends RuntimeException {
         return new TaskHubException(msg, HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
+    public static TaskHubException rateLimited(String msg) {
+        return new TaskHubException(msg, HttpStatus.TOO_MANY_REQUESTS, "RATE_LIMITED", null);
+    }
+
     /**
      * 402 Payment Required khi ví không đủ.
      */

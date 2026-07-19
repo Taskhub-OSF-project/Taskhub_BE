@@ -31,6 +31,16 @@ public class LoggingMailService implements MailService {
         log.info("Verification email skipped because delivery is disabled (recipient={})", mask(toEmail));
     }
 
+    @Override
+    public void sendRegistrationOtp(String toEmail, String code) {
+        log.info("Registration OTP email skipped because delivery is disabled (recipient={})", mask(toEmail));
+    }
+
+    @Override
+    public void sendLoginOtp(String toEmail, String code) {
+        log.info("Login OTP email skipped because delivery is disabled (recipient={})", mask(toEmail));
+    }
+
     private String mask(String email) {
         if (email == null || !email.contains("@")) return "***";
         return email.charAt(0) + "***" + email.substring(email.indexOf('@'));

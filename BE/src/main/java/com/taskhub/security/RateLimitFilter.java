@@ -84,7 +84,8 @@ public class RateLimitFilter extends OncePerRequestFilter {
             case "/api/auth/register" -> new Limit(rateLimitProperties.getRegisterPerHour(), Duration.ofHours(1));
             case "/api/auth/forgot-password", "/api/auth/recover-account",
                  "/api/auth/recover-password/request", "/api/auth/recover-password/confirm",
-                 "/api/auth/reset-password" -> new Limit(rateLimitProperties.getRecoveryPerHour(), Duration.ofHours(1));
+                 "/api/auth/reset-password", "/api/auth/email-otp/verify",
+                 "/api/auth/email-otp/resend" -> new Limit(rateLimitProperties.getRecoveryPerHour(), Duration.ofHours(1));
             case "/api/ai/public/chat" -> new Limit(rateLimitProperties.getPublicAiPerMinute(), Duration.ofMinutes(1));
             default -> path.startsWith("/api/ai/")
                     ? new Limit(rateLimitProperties.getAiPerMinute(), Duration.ofMinutes(1))

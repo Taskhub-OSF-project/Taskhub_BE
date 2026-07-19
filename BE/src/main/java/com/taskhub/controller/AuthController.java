@@ -99,10 +99,26 @@ public class AuthController {
         return ResponseEntity.ok(ApiResponse.ok("Email verified", null));
     }
 
+    @PostMapping("/email-otp/verify")
+    public ResponseEntity<ApiResponse<AuthResponse>> verifyEmailOtp(
+            @Valid @RequestBody EmailOtpVerifyRequest req,
+            HttpServletResponse response) {
+        AuthResponse auth = authService.verifyEmailOtp(req);
+        if (auth.getToken() != null) {
+            auth = refreshTokenCookies.moveRefreshTokenToCookie(response, auth);
+        }
+        return ResponseEntity.ok(ApiResponse.ok("OTP verified", auth));
+    }
+
+    @PostMapping("/email-otp/resend")
+    public ResponseEntity<ApiResponse<Void>> resendEmailOtp(
+            @Valid @RequestBody EmailOtpResendRequest req) {
+        authService.resendEmailOtp(req);
+        return ResponseEntity.ok(ApiResponse.ok("A new OTP has been sent", null));
+    }
+
     private AuthResponse prepareAuthResponse(HttpServletResponse response, AuthResponse auth) {
-        if (auth.isVerificationRequired()) {
-            String refreshToken = auth.getRefreshToken();
-            authService.logout(auth.getUserId(), LogoutRequest.builder().refreshToken(refreshToken).build());
+        if (auth.isVerificationRequired() || auth.isEmailOtpRequired()) {
             auth.setToken(null);
             auth.setRefreshToken(null);
             return auth;

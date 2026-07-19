@@ -21,4 +21,8 @@ public interface MailService {
      * Gửi link xác thực email.
      */
     void sendEmailVerification(String toEmail, String verifyLink);
+
+    void sendRegistrationOtp(String toEmail, String code);
+
+    void sendLoginOtp(String toEmail, String code);
 }
