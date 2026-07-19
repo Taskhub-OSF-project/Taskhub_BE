@@ -79,7 +79,8 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
     private Limit resolveLimit(String path) {
         return switch (path) {
-            case "/api/auth/login" -> new Limit(rateLimitProperties.getLoginPerMinute(), Duration.ofMinutes(1));
+            case "/api/auth/login", "/api/auth/google" ->
+                    new Limit(rateLimitProperties.getLoginPerMinute(), Duration.ofMinutes(1));
             case "/api/auth/refresh" -> new Limit(rateLimitProperties.getRefreshPerMinute(), Duration.ofMinutes(1));
             case "/api/auth/register" -> new Limit(rateLimitProperties.getRegisterPerHour(), Duration.ofHours(1));
             case "/api/auth/forgot-password", "/api/auth/recover-account",

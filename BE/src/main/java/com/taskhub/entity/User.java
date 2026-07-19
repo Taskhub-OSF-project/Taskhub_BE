@@ -98,4 +98,11 @@ public class User extends AuditableEntity {
     @Column(nullable = false)
     @Builder.Default
     private boolean emailVerified = false;
+
+    @Column(name = "auth_provider", nullable = false, length = 20)
+    @Builder.Default
+    private String authProvider = "LOCAL";
+
+    @Column(name = "provider_subject", unique = true, length = 255)
+    private String providerSubject;
 }

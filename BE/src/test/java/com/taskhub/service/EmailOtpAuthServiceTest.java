@@ -1,6 +1,7 @@
 package com.taskhub.service;
 
 import com.taskhub.dto.request.EmailOtpVerifyRequest;
+import com.taskhub.dto.request.GoogleAuthRequest;
 import com.taskhub.dto.request.LoginRequest;
 import com.taskhub.dto.request.RegisterRequest;
 import com.taskhub.dto.response.AuthResponse;
@@ -8,6 +9,7 @@ import com.taskhub.entity.EmailOtpChallenge;
 import com.taskhub.entity.User;
 import com.taskhub.enums.EmailOtpPurpose;
 import com.taskhub.enums.Role;
+import com.taskhub.exception.TaskHubException;
 import com.taskhub.repository.EmailOtpChallengeRepository;
 import com.taskhub.repository.OtpTokenRepository;
 import com.taskhub.repository.RefreshTokenRepository;
@@ -43,6 +45,7 @@ class EmailOtpAuthServiceTest {
     @Mock private AuditService auditService;
     @Mock private MailService mailService;
     @Mock private SmsService smsService;
+    @Mock private GoogleIdentityService googleIdentityService;
 
     private AuthService authService;
     private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
@@ -59,11 +62,12 @@ class EmailOtpAuthServiceTest {
                 jwtService,
                 auditService,
                 mailService,
-                smsService);
+                smsService,
+                googleIdentityService);
         ReflectionTestUtils.setField(authService, "requireEmailVerification", true);
         ReflectionTestUtils.setField(authService, "requireLoginEmailOtp", true);
-        when(mailService.isDeliveryEnabled()).thenReturn(true);
-        when(emailOtpChallengeRepository.save(any(EmailOtpChallenge.class)))
+        lenient().when(mailService.isDeliveryEnabled()).thenReturn(true);
+        lenient().when(emailOtpChallengeRepository.save(any(EmailOtpChallenge.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
         lenient().when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
             User user = invocation.getArgument(0);
@@ -115,6 +119,83 @@ class EmailOtpAuthServiceTest {
         assertTrue(verified.isEmailVerified());
         assertNull(verified.getToken());
         assertNotNull(challenge.getUsedAt());
+    }
+
+    @Test
+    void googleRegistrationCreatesVerifiedAccountWithoutEmailOtp() {
+        when(googleIdentityService.verify("google-id-token")).thenReturn(
+                new GoogleIdentityService.GoogleIdentity(
+                        "google-subject-123", "Student@Test.com", "Student Google", "https://example.com/a.png"));
+        when(userRepository.findByAuthProviderAndProviderSubject("GOOGLE", "google-subject-123"))
+                .thenReturn(Optional.empty());
+        when(userRepository.existsByEmailIgnoreCase("student@test.com")).thenReturn(false);
+        when(jwtService.generateAccessToken(7L, "student@test.com", "STUDENT")).thenReturn("access-token");
+        when(jwtService.getAccessExpirationMs()).thenReturn(900_000L);
+        when(jwtService.getRefreshExpirationMs()).thenReturn(604_800_000L);
+
+        AuthResponse response = authService.authenticateWithGoogle(GoogleAuthRequest.builder()
+                .credential("google-id-token")
+                .role(Role.STUDENT)
+                .build());
+
+        assertEquals("access-token", response.getToken());
+        assertTrue(response.isEmailVerified());
+        assertFalse(response.isEmailOtpRequired());
+        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(userCaptor.capture());
+        assertEquals("GOOGLE", userCaptor.getValue().getAuthProvider());
+        assertEquals("google-subject-123", userCaptor.getValue().getProviderSubject());
+        verify(mailService, never()).sendRegistrationOtp(anyString(), anyString());
+        verify(mailService, never()).sendLoginOtp(anyString(), anyString());
+    }
+
+    @Test
+    void googleLoginDoesNotRequireEmailOtpForReturningGoogleAccount() {
+        when(googleIdentityService.verify("google-id-token")).thenReturn(
+                new GoogleIdentityService.GoogleIdentity(
+                        "google-subject-123", "student@test.com", "Student Google", null));
+        when(userRepository.findByAuthProviderAndProviderSubject("GOOGLE", "google-subject-123"))
+                .thenReturn(Optional.of(User.builder()
+                        .id(7L)
+                        .email("student@test.com")
+                        .password("not-used")
+                        .fullName("Student Google")
+                        .role(Role.STUDENT)
+                        .emailVerified(true)
+                        .authProvider("GOOGLE")
+                        .providerSubject("google-subject-123")
+                        .build()));
+        when(jwtService.generateAccessToken(7L, "student@test.com", "STUDENT")).thenReturn("access-token");
+        when(jwtService.getAccessExpirationMs()).thenReturn(900_000L);
+        when(jwtService.getRefreshExpirationMs()).thenReturn(604_800_000L);
+
+        AuthResponse response = authService.authenticateWithGoogle(GoogleAuthRequest.builder()
+                .credential("google-id-token")
+                .role(Role.HIRER)
+                .build());
+
+        assertEquals(Role.STUDENT, response.getRole());
+        assertFalse(response.isEmailOtpRequired());
+        verify(mailService, never()).sendLoginOtp(anyString(), anyString());
+    }
+
+    @Test
+    void googleRegistrationDoesNotSilentlyTakeOverLocalAccount() {
+        when(googleIdentityService.verify("google-id-token")).thenReturn(
+                new GoogleIdentityService.GoogleIdentity(
+                        "google-subject-123", "student@test.com", "Student Google", null));
+        when(userRepository.findByAuthProviderAndProviderSubject("GOOGLE", "google-subject-123"))
+                .thenReturn(Optional.empty());
+        when(userRepository.existsByEmailIgnoreCase("student@test.com")).thenReturn(true);
+
+        TaskHubException error = assertThrows(TaskHubException.class, () ->
+                authService.authenticateWithGoogle(GoogleAuthRequest.builder()
+                        .credential("google-id-token")
+                        .role(Role.STUDENT)
+                        .build()));
+
+        assertEquals(400, error.getStatus().value());
+        verify(refreshTokenRepository, never()).save(any());
     }
 
     @Test

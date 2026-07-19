@@ -33,6 +33,14 @@ public class AuthController {
         return ResponseEntity.ok(ApiResponse.ok("Login successful", auth));
     }
 
+    @PostMapping("/google")
+    public ResponseEntity<ApiResponse<AuthResponse>> google(
+            @Valid @RequestBody GoogleAuthRequest req,
+            HttpServletResponse response) {
+        AuthResponse auth = prepareAuthResponse(response, authService.authenticateWithGoogle(req));
+        return ResponseEntity.ok(ApiResponse.ok("Google authentication successful", auth));
+    }
+
     @PostMapping("/refresh")
     public ResponseEntity<ApiResponse<AuthResponse>> refresh(
             @RequestHeader(name = "X-Requested-With", required = false) String requestedWith,

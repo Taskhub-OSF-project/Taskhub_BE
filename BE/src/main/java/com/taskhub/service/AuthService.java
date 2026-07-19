@@ -1,6 +1,7 @@
 package com.taskhub.service;
 
 import com.taskhub.dto.request.ForgotPasswordRequest;
+import com.taskhub.dto.request.GoogleAuthRequest;
 import com.taskhub.dto.request.EmailOtpResendRequest;
 import com.taskhub.dto.request.EmailOtpVerifyRequest;
 import com.taskhub.dto.request.LoginRequest;
@@ -58,6 +59,7 @@ public class AuthService {
     private final AuditService auditService;
     private final MailService mailService;
     private final SmsService smsService;
+    private final GoogleIdentityService googleIdentityService;
 
     @Value("${app.mail.frontend-base-url:http://localhost:5173}")
     private String frontendBaseUrl;
@@ -114,6 +116,53 @@ public class AuthService {
             EmailOtpChallenge challenge = issueEmailOtp(user, EmailOtpPurpose.REGISTRATION);
             return buildOtpChallengeResponse(user, challenge, true);
         }
+        return buildAuthResponse(user, generateAndSaveRefreshToken(user.getId()));
+    }
+
+    @Transactional
+    public AuthResponse authenticateWithGoogle(GoogleAuthRequest req) {
+        GoogleIdentityService.GoogleIdentity identity = googleIdentityService.verify(req.getCredential());
+        String email = normalizeEmail(identity.email());
+
+        User user = userRepository.findByAuthProviderAndProviderSubject("GOOGLE", identity.subject())
+                .orElseGet(() -> {
+                    if (userRepository.existsByEmailIgnoreCase(email)) {
+                        throw TaskHubException.badRequest(
+                                "Email này đã đăng ký bằng mật khẩu. Hãy đăng nhập bằng mật khẩu để bảo vệ tài khoản.");
+                    }
+                    Role role = req.getRole();
+                    if (role == null || role == Role.ADMIN) {
+                        throw TaskHubException.badRequest("Vui lòng chọn vai trò Nhà tuyển dụng hoặc Sinh viên");
+                    }
+                    String fullName = trimToNull(identity.fullName());
+                    if (fullName == null) fullName = email.substring(0, email.indexOf('@'));
+                    String avatarUrl = trimToNull(identity.pictureUrl());
+                    if (avatarUrl != null && avatarUrl.length() > 500) avatarUrl = null;
+                    User created = User.builder()
+                            .email(email)
+                            .password(passwordEncoder.encode(TokenHasher.randomToken()))
+                            .fullName(fullName)
+                            .role(role)
+                            .avatarUrl(avatarUrl)
+                            .emailVerified(true)
+                            .isVerified(false)
+                            .authProvider("GOOGLE")
+                            .providerSubject(identity.subject())
+                            .build();
+                    User saved = userRepository.save(created);
+                    auditService.record("REGISTER_GOOGLE", saved.getEmail(),
+                            "User registered with Google and role: " + saved.getRole());
+                    return saved;
+                });
+
+        if (Boolean.TRUE.equals(user.getIsBanned())) {
+            throw TaskHubException.unauthorized("Account is disabled");
+        }
+        if (!"GOOGLE".equals(user.getAuthProvider())
+                || !identity.subject().equals(user.getProviderSubject())) {
+            throw TaskHubException.unauthorized("Tài khoản Google không khớp");
+        }
+        auditService.record("LOGIN_GOOGLE", user.getEmail(), "User logged in with Google");
         return buildAuthResponse(user, generateAndSaveRefreshToken(user.getId()));
     }
 
