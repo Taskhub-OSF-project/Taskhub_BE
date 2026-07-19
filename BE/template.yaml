@@ -102,7 +102,7 @@ Resources:
           APP_ADMIN_ENABLED: 'false'
           APP_MAIL_DELIVERY_ENABLED: !Ref AppMailDeliveryEnabled
           APP_MAIL_FROM_EMAIL: !Ref AppMailFromEmail
-          APP_MAIL_REGION: us-east-1
+          APP_MAIL_REGION: ap-southeast-1
           SUPABASE_URL: !Ref SupabaseUrl
           SUPABASE_SERVICE_ROLE_KEY: !Ref SupabaseServiceRoleKey
       Events:

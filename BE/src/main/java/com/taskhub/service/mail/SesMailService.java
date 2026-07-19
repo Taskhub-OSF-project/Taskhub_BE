@@ -23,7 +23,7 @@ public class SesMailService implements MailService {
 
     public SesMailService(
             @Value("${app.mail.from-email:}") String fromEmail,
-            @Value("${app.mail.region:${AWS_REGION:us-east-1}}") String region) {
+            @Value("${app.mail.region:${AWS_REGION:ap-southeast-1}}") String region) {
         if (fromEmail == null || fromEmail.isBlank()) {
             throw new IllegalStateException("APP_MAIL_FROM_EMAIL is required when mail delivery is enabled");
         }
