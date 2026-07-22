@@ -3,8 +3,8 @@ package com.taskhub.service.mail;
 import com.taskhub.exception.TaskHubException;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
 import software.amazon.awssdk.regions.Region;
@@ -17,7 +17,7 @@ import software.amazon.awssdk.services.sesv2.model.Message;
 import software.amazon.awssdk.services.sesv2.model.SesV2Exception;
 
 @Service
-@ConditionalOnProperty(name = "app.mail.delivery-enabled", havingValue = "true")
+@ConditionalOnExpression("'${app.mail.delivery-enabled:false}' == 'true' and '${app.mail.provider:ses}' == 'ses'")
 @Slf4j
 public class SesMailService implements MailService {
     private final SesV2Client client;

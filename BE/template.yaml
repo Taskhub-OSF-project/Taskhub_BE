@@ -29,12 +29,23 @@ Parameters:
     Description: Optional Supabase service role key for Storage integration
   AppMailDeliveryEnabled:
     Type: String
-    Default: 'true'
+    Default: 'false'
     AllowedValues: ['true', 'false']
-    Description: Enable AWS SES security emails
+    Description: Enable security email delivery
+  AppMailProvider:
+    Type: String
+    Default: ses
+    AllowedValues: [ses, resend]
+    Description: Security email provider; use resend while SES production access is pending
   AppMailFromEmail:
     Type: String
-    Description: Verified SES sender address; required when mail delivery is enabled
+    Default: ''
+    Description: Sender address on the verified SES or Resend domain
+  AppMailResendApiKey:
+    Type: String
+    NoEcho: true
+    Default: ''
+    Description: Resend API key; required only when AppMailProvider is resend
 
 Globals:
   Function:
@@ -101,7 +112,9 @@ Resources:
           APP_REFRESH_COOKIE_SAME_SITE: None
           APP_ADMIN_ENABLED: 'false'
           APP_MAIL_DELIVERY_ENABLED: !Ref AppMailDeliveryEnabled
+          APP_MAIL_PROVIDER: !Ref AppMailProvider
           APP_MAIL_FROM_EMAIL: !Ref AppMailFromEmail
+          APP_MAIL_RESEND_API_KEY: !Ref AppMailResendApiKey
           APP_MAIL_REGION: ap-southeast-1
           SUPABASE_URL: !Ref SupabaseUrl
           SUPABASE_SERVICE_ROLE_KEY: !Ref SupabaseServiceRoleKey

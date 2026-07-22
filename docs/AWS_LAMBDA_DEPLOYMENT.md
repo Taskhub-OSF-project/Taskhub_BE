@@ -138,6 +138,28 @@ SupabaseServiceRoleKey: <optional Supabase service role key>
 
 Do not commit real secrets into git.
 
+## Security email provider
+
+The backend supports two production email transports behind the same
+`MailService` interface:
+
+- `AppMailProvider=ses` uses Amazon SES.
+- `AppMailProvider=resend` sends OTP and account-security emails through the
+  Resend HTTPS API while SES production access is pending.
+
+For the Resend rollout, add these parameter overrides to the deploy command:
+
+```powershell
+AppMailDeliveryEnabled="true" `
+AppMailProvider="resend" `
+AppMailFromEmail="TaskHub <otp@mail.taskhubvn.com>" `
+AppMailResendApiKey="<resend-api-key>"
+```
+
+The API key must stay in the backend environment only. See
+`docs/AUTH_OTP_ROLLOUT.md` for the live rollout checklist and verification
+steps.
+
 ## Environment used by Lambda
 
 The SAM template sets:

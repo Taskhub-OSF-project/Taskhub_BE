@@ -53,14 +53,12 @@ public class AuthController {
             @RequestBody(required = false) RefreshTokenRequest bodyReq,
             HttpServletResponse response) {
             
-        String token = (cookieToken != null && !cookieToken.isBlank()) ? cookieToken : 
-                       (bodyReq != null ? bodyReq.getRefreshToken() : null);
-
-        if ("XMLHttpRequest".equals(requestedWith)) {
-            if (cookieToken == null || cookieToken.isBlank()) {
-                throw TaskHubException.unauthorized("Refresh token cookie is required");
-            }
+        String token;
+        if (cookieToken != null && !cookieToken.isBlank()) {
+            requireSpaRequest(requestedWith);
             token = cookieToken;
+        } else {
+            token = bodyReq != null ? bodyReq.getRefreshToken() : null;
         }
 
         if (token == null || token.isBlank()) {
@@ -80,14 +78,12 @@ public class AuthController {
             @RequestBody(required = false) LogoutRequest bodyReq,
             HttpServletResponse response) {
         
-        String token = (cookieToken != null && !cookieToken.isBlank()) ? cookieToken : 
-                       (bodyReq != null ? bodyReq.getRefreshToken() : null);
-
-        if ("XMLHttpRequest".equals(requestedWith)) {
-            if (cookieToken == null || cookieToken.isBlank()) {
-                throw TaskHubException.unauthorized("Refresh token cookie is required");
-            }
+        String token;
+        if (cookieToken != null && !cookieToken.isBlank()) {
+            requireSpaRequest(requestedWith);
             token = cookieToken;
+        } else {
+            token = bodyReq != null ? bodyReq.getRefreshToken() : null;
         }
 
         LogoutRequest req = token == null || token.isBlank()

@@ -39,6 +39,7 @@ class AuthIntegrationTest {
                 .build();
 
         MvcResult registerResult = mockMvc.perform(post("/api/auth/register")
+                        .header("X-Requested-With", "XMLHttpRequest")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(register)))
                 .andExpect(status().isOk())
@@ -60,6 +61,7 @@ class AuthIntegrationTest {
                 .build();
 
         mockMvc.perform(post("/api/auth/login")
+                        .header("X-Requested-With", "XMLHttpRequest")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(login)))
                 .andExpect(status().isOk())
@@ -139,12 +141,14 @@ class AuthIntegrationTest {
                 .build();
 
         mockMvc.perform(post("/api/auth/register")
+                        .header("X-Requested-With", "XMLHttpRequest")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(register)))
                 .andExpect(status().isOk());
 
         LoginRequest login = LoginRequest.builder().email(email).password("password123").build();
         MvcResult loginResult = mockMvc.perform(post("/api/auth/login")
+                        .header("X-Requested-With", "XMLHttpRequest")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(login)))
                 .andExpect(status().isOk())

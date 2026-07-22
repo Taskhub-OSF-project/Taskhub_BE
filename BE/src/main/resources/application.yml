@@ -62,6 +62,13 @@ app:
     full-name: ${APP_ADMIN_FULL_NAME:TaskHub Admin}
   mail:
     frontend-base-url: ${APP_FRONTEND_BASE_URL:http://localhost:5173}
+    delivery-enabled: ${APP_MAIL_DELIVERY_ENABLED:false}
+    provider: ${APP_MAIL_PROVIDER:ses}
+    from-email: ${APP_MAIL_FROM_EMAIL:}
+    region: ${APP_MAIL_REGION:${AWS_REGION:ap-southeast-1}}
+    resend:
+      api-key: ${APP_MAIL_RESEND_API_KEY:}
+      endpoint: ${APP_MAIL_RESEND_ENDPOINT:https://api.resend.com/emails}
   rate-limit:
     login-per-minute: ${APP_RATE_LIMIT_LOGIN:10}
     forgot-password-per-hour: ${APP_RATE_LIMIT_FORGOT_PASSWORD:5}
