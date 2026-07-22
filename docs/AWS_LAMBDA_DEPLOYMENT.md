@@ -201,13 +201,13 @@ Invoke-WebRequest "$apiUrl/api/health" -UseBasicParsing
 Current deployed API URL:
 
 ```text
-https://cyxlrtltrl.execute-api.ap-southeast-1.amazonaws.com/Prod/
+https://6meekld3r6.execute-api.ap-southeast-1.amazonaws.com/Prod/
 ```
 
 Health check:
 
 ```text
-https://cyxlrtltrl.execute-api.ap-southeast-1.amazonaws.com/Prod/api/health
+https://6meekld3r6.execute-api.ap-southeast-1.amazonaws.com/Prod/api/health
 ```
 
 Expected health response:
@@ -220,7 +220,7 @@ Auth/controller smoke test:
 
 ```powershell
 Invoke-WebRequest `
-  "https://cyxlrtltrl.execute-api.ap-southeast-1.amazonaws.com/Prod/api/auth/login" `
+  "https://6meekld3r6.execute-api.ap-southeast-1.amazonaws.com/Prod/api/auth/login" `
   -Method Post `
   -ContentType "application/json" `
   -Body '{"email":"test@example.com","password":"wrong"}' `
@@ -241,7 +241,7 @@ $headers = @{
 }
 
 Invoke-WebRequest `
-  "https://cyxlrtltrl.execute-api.ap-southeast-1.amazonaws.com/Prod/api/auth/register" `
+  "https://6meekld3r6.execute-api.ap-southeast-1.amazonaws.com/Prod/api/auth/register" `
   -Method Options `
   -Headers $headers `
   -UseBasicParsing
@@ -257,7 +257,7 @@ Access-Control-Allow-Origin: https://main.d3lqxlf1rfgnci.amplifyapp.com
 ### CORS and Stage Path "Failed to fetch" Gotcha
 
 If the browser displays a `Failed to fetch` error while direct API calls via curl or python return `200`, it is likely due to stage prefix mismatch:
-*   **The Issue:** When `VITE_API_BASE_URL` is set to an API Gateway stage endpoint like `https://cyxlrtltrl.execute-api.ap-southeast-1.amazonaws.com/Prod/`, using standard JavaScript `new URL("/api/auth/login", BASE_URL)` strips the `/Prod/` prefix entirely, resulting in `https://cyxlrtltrl.execute-api.ap-southeast-1.amazonaws.com/api/auth/login`. This bypasses the stage prefix and fails with a connection or CORS failure.
+*   **The Issue:** When `VITE_API_BASE_URL` is set to an API Gateway stage endpoint like `https://6meekld3r6.execute-api.ap-southeast-1.amazonaws.com/Prod/`, using standard JavaScript `new URL("/api/auth/login", BASE_URL)` strips the `/Prod/` prefix entirely, resulting in `https://6meekld3r6.execute-api.ap-southeast-1.amazonaws.com/api/auth/login`. This bypasses the stage prefix and fails with a connection or CORS failure.
 *   **The Solution:** The frontend uses `getApiUrl` from `client.ts` to construct API URLs. It strips the trailing slash from `BASE_URL` and appends the prefix and path directly (e.g. `baseUrlClean + API_PREFIX + path`), preserving the `/Prod/` stage prefix.
 
 Swagger UI is configured at:

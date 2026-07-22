@@ -22,7 +22,7 @@ sam deploy
 After deploy, test the backend:
 
 ```powershell
-Invoke-WebRequest "https://cyxlrtltrl.execute-api.ap-southeast-1.amazonaws.com/Prod/api/health" -UseBasicParsing
+Invoke-WebRequest "https://6meekld3r6.execute-api.ap-southeast-1.amazonaws.com/Prod/api/health" -UseBasicParsing
 ```
 
 Expected result:
@@ -55,7 +55,7 @@ Normal flow:
 cd D:\TaskHub1.0\Taskhub_BE\BE
 ..\..\maven\apache-maven-3.9.6\bin\mvn.cmd clean package -DskipTests
 & "C:\Program Files\Amazon\AWSSAMCLI\bin\sam.cmd" deploy
-Invoke-WebRequest "https://cyxlrtltrl.execute-api.ap-southeast-1.amazonaws.com/Prod/api/health" -UseBasicParsing
+Invoke-WebRequest "https://6meekld3r6.execute-api.ap-southeast-1.amazonaws.com/Prod/api/health" -UseBasicParsing
 ```
 
 The last command wakes up Lambda. During startup, Spring Boot connects to
@@ -127,7 +127,7 @@ Test auth route reaches backend:
 
 ```powershell
 Invoke-WebRequest `
-  "https://cyxlrtltrl.execute-api.ap-southeast-1.amazonaws.com/Prod/api/auth/login" `
+  "https://6meekld3r6.execute-api.ap-southeast-1.amazonaws.com/Prod/api/auth/login" `
   -Method Post `
   -ContentType "application/json" `
   -Body '{"email":"test@example.com","password":"wrong"}' `

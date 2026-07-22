@@ -7,12 +7,15 @@ import com.taskhub.exception.TaskHubException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.core.env.MapPropertySource;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -46,6 +49,24 @@ class ResendMailServiceTest {
     @AfterEach
     void stopServer() {
         if (server != null) server.stop(0);
+    }
+
+    @Test
+    void productionBean_usesTheConfiguredConstructor() {
+        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+            context.getEnvironment().getPropertySources().addFirst(new MapPropertySource(
+                    "resend-test",
+                    Map.of(
+                            "app.mail.delivery-enabled", "true",
+                            "app.mail.provider", "resend",
+                            "app.mail.resend.api-key", "resend-test-key",
+                            "app.mail.from-email", "TaskHub <otp@mail.taskhubvn.com>")));
+            context.registerBean(ObjectMapper.class, () -> new ObjectMapper());
+            context.register(ResendMailService.class);
+            context.refresh();
+
+            assertTrue(context.getBean(ResendMailService.class).isDeliveryEnabled());
+        }
     }
 
     @Test

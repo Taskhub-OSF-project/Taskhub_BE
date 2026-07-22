@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.taskhub.exception.TaskHubException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Service;
@@ -33,6 +34,7 @@ public class ResendMailService implements MailService {
     private final String apiKey;
     private final String fromEmail;
 
+    @Autowired
     public ResendMailService(
             ObjectMapper objectMapper,
             @Value("${app.mail.resend.api-key:}") String apiKey,
