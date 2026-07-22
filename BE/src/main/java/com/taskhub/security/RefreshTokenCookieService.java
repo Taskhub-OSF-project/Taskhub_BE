@@ -31,13 +31,16 @@ public class RefreshTokenCookieService {
         }
     }
 
-    public AuthResponse moveRefreshTokenToCookie(HttpServletResponse response, AuthResponse authResponse) {
+    public AuthResponse processRefreshToken(HttpServletResponse response, AuthResponse authResponse, String requestedWith) {
         if (authResponse == null || authResponse.getRefreshToken() == null
                 || authResponse.getRefreshToken().isBlank()) {
             throw TaskHubException.internalError("Refresh token was not issued");
         }
         response.addHeader(HttpHeaders.SET_COOKIE, cookie(authResponse.getRefreshToken(), maxAge).toString());
-        authResponse.setRefreshToken(null);
+        
+        if ("XMLHttpRequest".equals(requestedWith)) {
+            authResponse.setRefreshToken(null);
+        }
         return authResponse;
     }
 

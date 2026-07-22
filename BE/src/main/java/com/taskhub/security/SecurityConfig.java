@@ -113,7 +113,14 @@ public class SecurityConfig {
 
     private CorsConfigurationSource corsSource() {
         var config = new CorsConfiguration();
-        config.setAllowedOrigins(corsProperties.getAllowedOrigins());
+        List<String> origins = corsProperties.getAllowedOrigins();
+        if (origins != null && !origins.isEmpty()) {
+            config.setAllowedOriginPatterns(origins.stream()
+                .map(origin -> origin.replace("localhost:5173", "localhost:*").replace("127.0.0.1:5173", "127.0.0.1:*"))
+                .toList());
+        } else {
+            config.setAllowedOriginPatterns(List.of("http://localhost:*", "http://127.0.0.1:*"));
+        }
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Requested-With"));
         config.setExposedHeaders(List.of("Authorization"));

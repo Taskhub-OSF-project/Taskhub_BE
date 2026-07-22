@@ -1,5 +1,8 @@
 package com.taskhub;
 
+import io.github.cdimascio.dotenv.Dotenv;
+import java.nio.file.Path;
+
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.scheduling.annotation.EnableAsync;
@@ -19,7 +22,29 @@ public class TaskHubApplication {
 
     public static void main(String[] args) {
         killPort8080();
+        loadEnv();
         SpringApplication.run(TaskHubApplication.class, args);
+    }
+
+    private static void loadEnv() {
+        try {
+            String baseDir = System.getProperty("user.dir");
+            Path envPath = Path.of(baseDir, ".env");
+            if (!envPath.toFile().exists()) {
+                envPath = Path.of(baseDir, "BE", ".env");
+            }
+            if (envPath.toFile().exists()) {
+                Dotenv dotenv = Dotenv.configure()
+                        .directory(envPath.getParent().toString())
+                        .filename(".env")
+                        .ignoreIfMalformed()
+                        .load();
+                dotenv.entries().forEach(e -> System.setProperty(e.getKey(), e.getValue()));
+                System.out.println("[INFO] Loaded .env from " + envPath);
+            }
+        } catch (Exception e) {
+            System.out.println("[WARN] Could not load .env file: " + e.getMessage());
+        }
     }
 
     private static void killPort8080() {

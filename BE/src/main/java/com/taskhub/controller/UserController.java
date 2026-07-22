@@ -54,10 +54,11 @@ public class UserController {
 
     @PostMapping("/switch-role")
     public ResponseEntity<ApiResponse<com.taskhub.dto.response.AuthResponse>> switchRole(
+            @RequestHeader(name = "X-Requested-With", required = false) String requestedWith,
             HttpServletResponse response) {
         Long userId = AuthUtil.getCurrentUser().getId();
-        var auth = refreshTokenCookies.moveRefreshTokenToCookie(
-                response, userService.switchRoleAndReturnToken(userId));
+        var auth = refreshTokenCookies.processRefreshToken(
+                response, userService.switchRoleAndReturnToken(userId), requestedWith);
         return ResponseEntity.ok(ApiResponse.ok("Role switched", auth));
     }
 

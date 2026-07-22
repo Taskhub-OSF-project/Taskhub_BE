@@ -20,24 +20,29 @@ public class AuthController {
     private final RefreshTokenCookieService refreshTokenCookies;
 
     @PostMapping("/register")
-    public ResponseEntity<ApiResponse<AuthResponse>> register(@Valid @RequestBody RegisterRequest req,
-                                                               HttpServletResponse response) {
-        AuthResponse auth = prepareAuthResponse(response, authService.register(req));
+    public ResponseEntity<ApiResponse<AuthResponse>> register(
+            @RequestHeader(name = "X-Requested-With", required = false) String requestedWith,
+            @Valid @RequestBody RegisterRequest req,
+            HttpServletResponse response) {
+        AuthResponse auth = prepareAuthResponse(response, authService.register(req), requestedWith);
         return ResponseEntity.ok(ApiResponse.ok("Registration successful", auth));
     }
 
     @PostMapping("/login")
-    public ResponseEntity<ApiResponse<AuthResponse>> login(@Valid @RequestBody LoginRequest req,
-                                                            HttpServletResponse response) {
-        AuthResponse auth = prepareAuthResponse(response, authService.login(req));
+    public ResponseEntity<ApiResponse<AuthResponse>> login(
+            @RequestHeader(name = "X-Requested-With", required = false) String requestedWith,
+            @Valid @RequestBody LoginRequest req,
+            HttpServletResponse response) {
+        AuthResponse auth = prepareAuthResponse(response, authService.login(req), requestedWith);
         return ResponseEntity.ok(ApiResponse.ok("Login successful", auth));
     }
 
     @PostMapping("/google")
     public ResponseEntity<ApiResponse<AuthResponse>> google(
+            @RequestHeader(name = "X-Requested-With", required = false) String requestedWith,
             @Valid @RequestBody GoogleAuthRequest req,
             HttpServletResponse response) {
-        AuthResponse auth = prepareAuthResponse(response, authService.authenticateWithGoogle(req));
+        AuthResponse auth = prepareAuthResponse(response, authService.authenticateWithGoogle(req), requestedWith);
         return ResponseEntity.ok(ApiResponse.ok("Google authentication successful", auth));
     }
 
@@ -45,26 +50,49 @@ public class AuthController {
     public ResponseEntity<ApiResponse<AuthResponse>> refresh(
             @RequestHeader(name = "X-Requested-With", required = false) String requestedWith,
             @CookieValue(name = "taskhub_refresh", required = false) String cookieToken,
+            @RequestBody(required = false) RefreshTokenRequest bodyReq,
             HttpServletResponse response) {
-        requireSpaRequest(requestedWith);
-        if (cookieToken == null || cookieToken.isBlank()) {
-            throw TaskHubException.unauthorized("Refresh token cookie is required");
+            
+        String token = (cookieToken != null && !cookieToken.isBlank()) ? cookieToken : 
+                       (bodyReq != null ? bodyReq.getRefreshToken() : null);
+
+        if ("XMLHttpRequest".equals(requestedWith)) {
+            if (cookieToken == null || cookieToken.isBlank()) {
+                throw TaskHubException.unauthorized("Refresh token cookie is required");
+            }
+            token = cookieToken;
         }
+
+        if (token == null || token.isBlank()) {
+            throw TaskHubException.unauthorized("Refresh token is required");
+        }
+        
         AuthResponse auth = authService.refreshToken(
-                RefreshTokenRequest.builder().refreshToken(cookieToken).build());
+                RefreshTokenRequest.builder().refreshToken(token).build());
         return ResponseEntity.ok(ApiResponse.ok("Token refreshed",
-                refreshTokenCookies.moveRefreshTokenToCookie(response, auth)));
+                refreshTokenCookies.processRefreshToken(response, auth, requestedWith)));
     }
 
     @PostMapping("/logout")
     public ResponseEntity<ApiResponse<Void>> logout(
             @RequestHeader(name = "X-Requested-With", required = false) String requestedWith,
             @CookieValue(name = "taskhub_refresh", required = false) String cookieToken,
+            @RequestBody(required = false) LogoutRequest bodyReq,
             HttpServletResponse response) {
-        requireSpaRequest(requestedWith);
-        LogoutRequest req = cookieToken == null || cookieToken.isBlank()
+        
+        String token = (cookieToken != null && !cookieToken.isBlank()) ? cookieToken : 
+                       (bodyReq != null ? bodyReq.getRefreshToken() : null);
+
+        if ("XMLHttpRequest".equals(requestedWith)) {
+            if (cookieToken == null || cookieToken.isBlank()) {
+                throw TaskHubException.unauthorized("Refresh token cookie is required");
+            }
+            token = cookieToken;
+        }
+
+        LogoutRequest req = token == null || token.isBlank()
                 ? null
-                : LogoutRequest.builder().refreshToken(cookieToken).build();
+                : LogoutRequest.builder().refreshToken(token).build();
         authService.logout(AuthUtil.getCurrentUser().getId(), req);
         refreshTokenCookies.clear(response);
         return ResponseEntity.ok(ApiResponse.ok("Logged out", null));
@@ -90,7 +118,8 @@ public class AuthController {
     }
 
     @PostMapping("/recover-password/confirm")
-    public ResponseEntity<ApiResponse<Object>> confirmPasswordReset(@Valid @RequestBody PasswordResetConfirmRequest req) {
+    public ResponseEntity<ApiResponse<Object>> confirmPasswordReset(
+            @Valid @RequestBody PasswordResetConfirmRequest req) {
         return ResponseEntity.ok(ApiResponse.ok("Password reset confirmed",
                 authService.confirmPasswordReset(req)));
     }
@@ -109,11 +138,12 @@ public class AuthController {
 
     @PostMapping("/email-otp/verify")
     public ResponseEntity<ApiResponse<AuthResponse>> verifyEmailOtp(
+            @RequestHeader(name = "X-Requested-With", required = false) String requestedWith,
             @Valid @RequestBody EmailOtpVerifyRequest req,
             HttpServletResponse response) {
         AuthResponse auth = authService.verifyEmailOtp(req);
         if (auth.getToken() != null) {
-            auth = refreshTokenCookies.moveRefreshTokenToCookie(response, auth);
+            auth = refreshTokenCookies.processRefreshToken(response, auth, requestedWith);
         }
         return ResponseEntity.ok(ApiResponse.ok("OTP verified", auth));
     }
@@ -125,13 +155,13 @@ public class AuthController {
         return ResponseEntity.ok(ApiResponse.ok("A new OTP has been sent", null));
     }
 
-    private AuthResponse prepareAuthResponse(HttpServletResponse response, AuthResponse auth) {
+    private AuthResponse prepareAuthResponse(HttpServletResponse response, AuthResponse auth, String requestedWith) {
         if (auth.isVerificationRequired() || auth.isEmailOtpRequired()) {
             auth.setToken(null);
             auth.setRefreshToken(null);
             return auth;
         }
-        return refreshTokenCookies.moveRefreshTokenToCookie(response, auth);
+        return refreshTokenCookies.processRefreshToken(response, auth, requestedWith);
     }
 
     private void requireSpaRequest(String requestedWith) {
