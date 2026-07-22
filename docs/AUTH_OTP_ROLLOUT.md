@@ -71,8 +71,9 @@ changes.
 - [x] Deploy backend trusted-device/Google/wallet changes to Lambda; the
       CloudFormation stack reached `UPDATE_COMPLETE` and `/api/health` returned
       `UP`.
-- [ ] Deploy frontend role chooser, typography, wallet and `/dashboard` changes
-      to Amplify.
+- [x] Deploy frontend role chooser, typography, wallet and `/dashboard` changes
+      to Amplify; job `67` succeeded and `/`, `/login`, `/dashboard` each
+      returned HTTP 200 on `taskhubvn.com`.
 - [ ] Verify Google new-user role selection, trusted login, dashboard and wallet
       with a real browser session on `https://taskhubvn.com`.
 
