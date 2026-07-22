@@ -1,109 +1,55 @@
-# 🔐 Admin Setup — TaskHub
+# TaskHub admin setup
 
-Tài liệu này mô tả cách TaskHub tự động tạo tài khoản admin mặc định khi khởi động lần đầu, và cách truy cập Admin Panel.
+TaskHub không cho phép người dùng tự đăng ký vai trò `ADMIN`. Tài khoản quản
+trị production chỉ được tạo bằng quy trình bootstrap một lần, sau đó bootstrap
+phải được tắt và bí mật phải được gỡ khỏi Lambda.
 
-## Tài khoản Admin mặc định
+## Trạng thái production (2026-07-22)
 
-Khi backend khởi động lần đầu, `AdminDataSeeder` sẽ tự động tạo 1 tài khoản admin nếu email chưa tồn tại (idempotent — chạy lại nhiều lần vẫn an toàn).
+- [x] Đã tạo tài khoản admin riêng:
+      `lehuynh.org.2310.gov+taskhubadmin@gmail.com`.
+- [x] Tài khoản được đánh dấu email đã xác minh và có role `ADMIN`.
+- [x] API đăng nhập đã xác nhận `ROLE=ADMIN`, `OTP_REQUIRED=true` và
+      `OTP_PURPOSE=LOGIN`.
+- [x] OTP được gửi qua Resend tới Gmail alias trên.
+- [x] Bootstrap đã được tắt lại sau khi tạo tài khoản.
+- [x] Lambda không còn giữ biến email hoặc mật khẩu admin; chỉ còn
+      `APP_ADMIN_ENABLED=false`.
+- [ ] Chủ tài khoản đăng nhập và đổi mật khẩu tạm ngay sau lần truy cập đầu.
 
-| Field    | Default                       |
-|----------|-------------------------------|
-| Email    | `admin@taskhub.com`           |
-| Password | `Admin@TaskHub2026`           |
-| FullName | `TaskHub Admin`               |
-| Role     | `ADMIN`                       |
+Không ghi mật khẩu admin vào Git, tài liệu, ảnh chụp, frontend, biến `VITE_*`
+hoặc log. Nếu mật khẩu tạm bị chia sẻ ngoài ý muốn, hãy đổi ngay trong phần cài
+đặt tài khoản.
 
-Khi tạo xong, server in log cảnh báo:
+## Đăng nhập Admin Panel
 
-```
-[SEEDER] ============================================================
-[SEEDER] Default admin account created:
-[SEEDER]   Email:    admin@taskhub.com
-[SEEDER]   Password: Admin@TaskHub2026
-[SEEDER]   Login URL (FE): /login (use the admin credentials above)
-[SEEDER]   Admin URL  (FE): /admin  (hidden route — no nav link)
-[SEEDER] CHANGE THE PASSWORD IMMEDIATELY IN PRODUCTION.
-[SEEDER] ============================================================
-```
+1. Mở `https://taskhubvn.com/login`.
+2. Nhập email admin và mật khẩu.
+3. Nhập OTP gửi tới Gmail.
+4. Tài khoản role `ADMIN` sẽ được chuyển tới `https://taskhubvn.com/admin`.
+5. Vào phần cài đặt và đổi mật khẩu tạm.
 
-## Cấu hình qua Environment Variables
+Các trang quản trị chính:
 
-Có thể override toàn bộ thông tin admin qua env (xem `.env.example`):
+- `/admin`: tổng quan.
+- `/admin/users`: quản lý người dùng.
+- `/admin/analytics`: thống kê hệ thống.
+- `/admin/removal-requests`: duyệt tranh chấp/yêu cầu gỡ.
 
-```env
-APP_ADMIN_ENABLED=true
-APP_ADMIN_EMAIL=admin@taskhub.com
-APP_ADMIN_PASSWORD=Admin@TaskHub2026
-APP_ADMIN_FULL_NAME=TaskHub Admin
-```
+Mọi endpoint quản trị đều được backend kiểm tra role `ADMIN`; việc biết URL
+không cấp quyền truy cập.
 
-> ⚠️ **BẮT BUỘC đổi `APP_ADMIN_PASSWORD` trước khi deploy production!**
-> Set `APP_ADMIN_ENABLED=false` để tắt hoàn toàn auto-seed (ví dụ khi DB đã có admin thật).
+## Quy trình tạo admin mới trong tương lai
 
-## Truy cập Admin Panel (FE)
+1. Dùng một email riêng có thể nhận OTP.
+2. Sinh mật khẩu tạm ngẫu nhiên mạnh; không dùng mật khẩu mặc định.
+3. Chỉ bật `APP_ADMIN_ENABLED=true` trong một lần khởi động có kiểm soát.
+4. `APP_ADMIN_EMAIL`, `APP_ADMIN_PASSWORD` và `APP_ADMIN_FULL_NAME` phải được
+   truyền bằng secret/`NoEcho`, không ghi cứng vào repository.
+5. Xác nhận API đăng nhập trả role `ADMIN`.
+6. Tắt lại bootstrap và gỡ toàn bộ email/mật khẩu bootstrap khỏi Lambda.
+7. Yêu cầu chủ tài khoản đổi mật khẩu ngay lần đăng nhập đầu tiên.
 
-| URL                              | Mô tả                                              |
-|----------------------------------|-----------------------------------------------------|
-| `http://localhost:5173/login`    | Đăng nhập với email/password admin                 |
-| `http://localhost:5173/admin`    | Sau khi đăng nhập, tự động redirect tới đây        |
-| `http://localhost:5173/admin/users`     | Quản lý người dùng                            |
-| `http://localhost:5173/admin/analytics` | Thống kê hệ thống                            |
-
-### Tại sao link `/admin` không lộ trên UI?
-
-TaskHub cố ý **không hiển thị** link admin trên navbar, sidebar, footer hay bất kỳ đâu trong UI để giảm nguy cơ:
-
-- Kẻ tấn công dò URL `/admin` rồi brute-force password
-- Người dùng thường vô tình đăng nhập sai tài khoản admin
-
-Cách duy nhất để vào `/admin`:
-1. Đăng nhập với tài khoản có `role === "ADMIN"` → `login.tsx` tự navigate
-2. Hoặc gõ URL trực tiếp `http://localhost:5173/admin`
-
-### Guard bảo mật
-
-`src/routes/admin.tsx` có `beforeLoad` chặn mọi user không phải ADMIN:
-
-```ts
-export const Route = createFileRoute("/admin")({
-  beforeLoad: () => {
-    if (typeof window === "undefined") return;
-    const u = getCachedUser();
-    if (!u) throw redirect({ to: "/login" });
-    if (u.role !== "ADMIN") throw redirect({ to: "/hirer" });
-  },
-  component: AdminLayout,
-});
-```
-
-→ User thường cố truy cập `/admin` sẽ bị redirect về `/hirer` (hoặc `/login` nếu chưa đăng nhập).
-
-## Đổi mật khẩu admin sau khi deploy
-
-Sau khi tạo admin lần đầu, **nên đổi mật khẩu** bằng 1 trong 2 cách:
-
-1. **SQL** (cập nhật password hash trực tiếp — hash từ `BCryptPasswordEncoder`).
-2. **API** (nếu đã có endpoint đổi password cho user) — gọi API đổi password với tài khoản admin vừa tạo.
-
-Ví dụ SQL (PostgreSQL):
-
-```sql
--- Password mới phải được hash bằng BCrypt trước khi lưu
-UPDATE users
-SET password = '$2a$10$<bcrypt-hash-cua-mat-khau-moi>'
-WHERE email = 'admin@taskhub.com';
-```
-
-Hoặc đơn giản nhất: xoá admin cũ trong DB, set biến môi trường mới, restart backend → seeder tạo lại với password mới.
-
-```sql
-DELETE FROM users WHERE email = 'admin@taskhub.com';
-```
-
-```env
-APP_ADMIN_PASSWORD=MatKhauMoiRatManh@2026
-```
-
-```bash
-./mvnw spring-boot:run
-```
+`AdminDataSeeder` là idempotent: nếu email đã tồn tại, nó không ghi đè tài
+khoản hoặc mật khẩu hiện có. Seeder cũng từ chối mật khẩu mặc định cũ
+`Admin@TaskHub2026`.

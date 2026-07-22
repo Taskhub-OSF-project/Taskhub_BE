@@ -54,6 +54,7 @@ public class AdminDataSeeder implements CommandLineRunner {
                 .password(passwordEncoder.encode(adminPassword))
                 .fullName(adminFullName)
                 .role(Role.ADMIN)
+                .emailVerified(true)
                 .isVerified(true)
                 .isAvailable(true)
                 .build();
