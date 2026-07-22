@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 import jakarta.servlet.http.HttpServletResponse;
 import com.taskhub.exception.TaskHubException;
 import com.taskhub.security.RefreshTokenCookieService;
+import com.taskhub.security.TrustedDeviceService;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -18,6 +19,7 @@ import com.taskhub.security.RefreshTokenCookieService;
 public class AuthController {
     private final AuthService authService;
     private final RefreshTokenCookieService refreshTokenCookies;
+    private final TrustedDeviceService trustedDevices;
 
     @PostMapping("/register")
     public ResponseEntity<ApiResponse<AuthResponse>> register(
@@ -31,9 +33,11 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<ApiResponse<AuthResponse>> login(
             @RequestHeader(name = "X-Requested-With", required = false) String requestedWith,
+            @CookieValue(name = "taskhub_trusted", required = false) String trustedDeviceToken,
             @Valid @RequestBody LoginRequest req,
             HttpServletResponse response) {
-        AuthResponse auth = prepareAuthResponse(response, authService.login(req), requestedWith);
+        AuthResponse auth = prepareAuthResponse(response,
+                authService.login(req, trustedDeviceToken), requestedWith);
         return ResponseEntity.ok(ApiResponse.ok("Login successful", auth));
     }
 
@@ -140,6 +144,9 @@ public class AuthController {
         AuthResponse auth = authService.verifyEmailOtp(req);
         if (auth.getToken() != null) {
             auth = refreshTokenCookies.processRefreshToken(response, auth, requestedWith);
+            if (auth.isTrustedDeviceGranted()) {
+                trustedDevices.remember(response, auth.getUserId());
+            }
         }
         return ResponseEntity.ok(ApiResponse.ok("OTP verified", auth));
     }

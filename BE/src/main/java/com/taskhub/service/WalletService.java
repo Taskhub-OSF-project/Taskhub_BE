@@ -41,7 +41,7 @@ public class WalletService {
         Long userId = AuthUtil.getCurrentUser().getId();
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> TaskHubException.notFound("User not found"));
-        return new WalletResponse(user.getWalletBalance());
+        return walletResponse(user);
     }
 
     /**
@@ -120,7 +120,7 @@ public class WalletService {
         user.setWalletBalance(user.getWalletBalance().add(amount));
         userRepository.save(user);
         recordTransaction(user, WalletTransactionType.top_up, amount, null);
-        return new WalletResponse(user.getWalletBalance());
+        return walletResponse(user);
     }
 
     /**
@@ -142,7 +142,7 @@ public class WalletService {
         user.setWalletBalance(user.getWalletBalance().subtract(amount));
         userRepository.save(user);
         recordTransaction(user, WalletTransactionType.withdrawal, amount.negate(), null);
-        return new WalletResponse(user.getWalletBalance());
+        return walletResponse(user);
     }
 
     /**
@@ -167,6 +167,13 @@ public class WalletService {
                 .balanceAfter(transaction.getBalanceAfter())
                 .taskId(transaction.getTask() != null ? transaction.getTask().getId() : null)
                 .createdAt(transaction.getCreatedAt())
+                .build();
+    }
+
+    private WalletResponse walletResponse(User user) {
+        return WalletResponse.builder()
+                .balance(user.getWalletBalance())
+                .cashOperationsEnabled(cashSimulationEnabled)
                 .build();
     }
 }

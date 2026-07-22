@@ -31,6 +31,10 @@ public class TaskHubException extends RuntimeException {
         return new TaskHubException(msg, HttpStatus.BAD_REQUEST);
     }
 
+    public static TaskHubException googleRoleRequired(String msg) {
+        return new TaskHubException(msg, HttpStatus.CONFLICT, "GOOGLE_ROLE_REQUIRED", null);
+    }
+
     /**
      * 404 Not Found khi không tìm thấy resource.
      */

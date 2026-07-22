@@ -29,6 +29,7 @@ import com.taskhub.repository.UserRepository;
 import com.taskhub.repository.VerificationTokenRepository;
 import com.taskhub.repository.EmailOtpChallengeRepository;
 import com.taskhub.security.JwtService;
+import com.taskhub.security.TrustedDeviceService;
 import com.taskhub.service.mail.MailService;
 import com.taskhub.util.TokenHasher;
 import lombok.RequiredArgsConstructor;
@@ -60,6 +61,7 @@ public class AuthService {
     private final MailService mailService;
     private final SmsService smsService;
     private final GoogleIdentityService googleIdentityService;
+    private final TrustedDeviceService trustedDeviceService;
 
     @Value("${app.mail.frontend-base-url:http://localhost:5173}")
     private String frontendBaseUrl;
@@ -132,7 +134,8 @@ public class AuthService {
                     }
                     Role role = req.getRole();
                     if (role == null || role == Role.ADMIN) {
-                        throw TaskHubException.badRequest("Vui lòng chọn vai trò Nhà tuyển dụng hoặc Sinh viên");
+                        throw TaskHubException.googleRoleRequired(
+                                "Vui lòng chọn vai trò Nhà tuyển dụng hoặc Sinh viên");
                     }
                     String fullName = trimToNull(identity.fullName());
                     if (fullName == null) fullName = email.substring(0, email.indexOf('@'));
@@ -168,6 +171,11 @@ public class AuthService {
 
     @Transactional
     public AuthResponse login(LoginRequest req) {
+        return login(req, null);
+    }
+
+    @Transactional
+    public AuthResponse login(LoginRequest req, String trustedDeviceToken) {
         // Validate email format
         if (req.getEmail() == null || req.getEmail().isBlank()) {
             auditService.record("LOGIN_FAILURE", req.getEmail(), "Email is blank");
@@ -200,13 +208,14 @@ public class AuthService {
             EmailOtpChallenge challenge = issueEmailOtp(user, EmailOtpPurpose.REGISTRATION);
             return buildOtpChallengeResponse(user, challenge, true);
         }
-        if (requireLoginEmailOtp) {
+        if (requireLoginEmailOtp && !trustedDeviceService.isTrusted(trustedDeviceToken, user.getId())) {
             EmailOtpChallenge challenge = issueEmailOtp(user, EmailOtpPurpose.LOGIN);
             auditService.record("LOGIN_OTP_SENT", user.getEmail(), "Login OTP challenge issued");
             return buildOtpChallengeResponse(user, challenge, false);
         }
 
-        auditService.record("LOGIN_SUCCESS", user.getEmail(), "User logged in");
+        auditService.record("LOGIN_SUCCESS", user.getEmail(),
+                requireLoginEmailOtp ? "User logged in on a trusted device" : "User logged in");
         return buildAuthResponse(user, generateAndSaveRefreshToken(user.getId()));
     }
 
@@ -244,7 +253,9 @@ public class AuthService {
             throw TaskHubException.forbidden("Email verification is required");
         }
         auditService.record("LOGIN_SUCCESS", user.getEmail(), "User logged in using email OTP");
-        return buildAuthResponse(user, generateAndSaveRefreshToken(user.getId()));
+        AuthResponse response = buildAuthResponse(user, generateAndSaveRefreshToken(user.getId()));
+        response.setTrustedDeviceGranted(true);
+        return response;
     }
 
     @Transactional

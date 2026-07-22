@@ -16,6 +16,7 @@ import com.taskhub.repository.RefreshTokenRepository;
 import com.taskhub.repository.UserRepository;
 import com.taskhub.repository.VerificationTokenRepository;
 import com.taskhub.security.JwtService;
+import com.taskhub.security.TrustedDeviceService;
 import com.taskhub.service.mail.MailService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -46,6 +47,7 @@ class EmailOtpAuthServiceTest {
     @Mock private MailService mailService;
     @Mock private SmsService smsService;
     @Mock private GoogleIdentityService googleIdentityService;
+    @Mock private TrustedDeviceService trustedDeviceService;
 
     private AuthService authService;
     private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
@@ -63,7 +65,8 @@ class EmailOtpAuthServiceTest {
                 auditService,
                 mailService,
                 smsService,
-                googleIdentityService);
+                googleIdentityService,
+                trustedDeviceService);
         ReflectionTestUtils.setField(authService, "requireEmailVerification", true);
         ReflectionTestUtils.setField(authService, "requireLoginEmailOtp", true);
         lenient().when(mailService.isDeliveryEnabled()).thenReturn(true);
@@ -199,6 +202,25 @@ class EmailOtpAuthServiceTest {
     }
 
     @Test
+    void newGoogleAccountRequiresExplicitRoleWithMachineReadableCode() {
+        when(googleIdentityService.verify("google-id-token")).thenReturn(
+                new GoogleIdentityService.GoogleIdentity(
+                        "new-google-subject", "new@test.com", "New User", null));
+        when(userRepository.findByAuthProviderAndProviderSubject("GOOGLE", "new-google-subject"))
+                .thenReturn(Optional.empty());
+        when(userRepository.existsByEmailIgnoreCase("new@test.com")).thenReturn(false);
+
+        TaskHubException error = assertThrows(TaskHubException.class, () ->
+                authService.authenticateWithGoogle(GoogleAuthRequest.builder()
+                        .credential("google-id-token")
+                        .build()));
+
+        assertEquals(409, error.getStatus().value());
+        assertEquals("GOOGLE_ROLE_REQUIRED", error.getErrorCode());
+        verify(userRepository, never()).save(any(User.class));
+    }
+
+    @Test
     void loginOtp_issuesSessionOnlyAfterCorrectCode() {
         User user = User.builder()
                 .id(9L)
@@ -242,6 +264,34 @@ class EmailOtpAuthServiceTest {
 
         assertEquals("access-token", authenticated.getToken());
         assertNotNull(authenticated.getRefreshToken());
+        assertTrue(authenticated.isTrustedDeviceGranted());
         verify(refreshTokenRepository).save(any());
+    }
+
+    @Test
+    void trustedDeviceSkipsRepeatedLoginOtpAfterPasswordCheck() {
+        User user = User.builder()
+                .id(10L)
+                .email("trusted@test.com")
+                .password(passwordEncoder.encode("strong-password"))
+                .fullName("Trusted User")
+                .role(Role.STUDENT)
+                .emailVerified(true)
+                .build();
+        when(userRepository.findByEmailIgnoreCase("trusted@test.com")).thenReturn(Optional.of(user));
+        when(trustedDeviceService.isTrusted("signed-device-token", 10L)).thenReturn(true);
+        when(jwtService.generateAccessToken(10L, "trusted@test.com", "STUDENT"))
+                .thenReturn("access-token");
+        when(jwtService.getAccessExpirationMs()).thenReturn(900_000L);
+        when(jwtService.getRefreshExpirationMs()).thenReturn(604_800_000L);
+
+        AuthResponse authenticated = authService.login(LoginRequest.builder()
+                .email("trusted@test.com")
+                .password("strong-password")
+                .build(), "signed-device-token");
+
+        assertEquals("access-token", authenticated.getToken());
+        assertFalse(authenticated.isEmailOtpRequired());
+        verify(mailService, never()).sendLoginOtp(anyString(), anyString());
     }
 }

@@ -1,5 +1,6 @@
 package com.taskhub.dto.response;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.taskhub.enums.Role;
 import lombok.*;
 import java.time.Instant;
@@ -27,4 +28,7 @@ public class AuthResponse {
     private long otpExpiresIn;
     /** Unix timestamp (seconds) when access token expires */
     private Long expiresAt;
+    /** Internal controller signal; never serialized to clients. */
+    @JsonIgnore
+    private boolean trustedDeviceGranted;
 }

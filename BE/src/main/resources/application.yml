@@ -37,6 +37,11 @@ app:
     refresh-cookie:
       secure: ${APP_REFRESH_COOKIE_SECURE:true}
       same-site: ${APP_REFRESH_COOKIE_SAME_SITE:None}
+    trusted-device-cookie:
+      name: taskhub_trusted
+      secure: ${APP_TRUSTED_DEVICE_COOKIE_SECURE:true}
+      same-site: ${APP_TRUSTED_DEVICE_COOKIE_SAME_SITE:None}
+      max-age-seconds: ${APP_TRUSTED_DEVICE_MAX_AGE_SECONDS:2592000}
   wallet:
     cash-simulation-enabled: ${APP_WALLET_CASH_SIMULATION_ENABLED:false}
   bedrock:
@@ -132,6 +137,9 @@ app:
     require-email-verification: false
     require-login-email-otp: false
     refresh-cookie:
+      secure: false
+      same-site: Lax
+    trusted-device-cookie:
       secure: false
       same-site: Lax
 

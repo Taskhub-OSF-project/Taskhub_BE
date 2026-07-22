@@ -21,8 +21,8 @@ changes.
       and the AWS SAM template.
 - [x] Browser refresh-token cookies require the SPA CSRF header; API clients can
       still submit a refresh token in the request body.
-- [x] Resend/OTP tests pass (9 tests), Google identity tests pass (2 tests),
-      and the full backend suite passes (147 tests).
+- [x] Resend/OTP tests pass, Google identity tests pass, and the full backend
+      suite passes (151 tests).
 - [x] The Amplify production bundle builds locally and returns HTTP 200 for `/`
       and `/login`.
 - [x] Confirmed that `taskhubvn.com` DNS is managed by Cloudflare
@@ -39,6 +39,42 @@ changes.
 - [ ] Enter the delivered OTP in the web UI and confirm the test account becomes
       email verified.
 - [ ] After SES production access is approved, switch the provider back to SES.
+
+## Authentication and UI hardening checklist (2026-07-22)
+
+- [x] A returning Google account signs in immediately without being asked for a
+      role again.
+- [x] A new Google identity is verified first, then receives an explicit
+      Nhà tuyển dụng / Sinh viên role chooser before the account is created.
+- [x] The backend returns the machine-readable `GOOGLE_ROLE_REQUIRED` code and
+      never silently assigns a default role.
+- [x] A successful login OTP creates a signed, HttpOnly, Secure trusted-device
+      cookie for 30 days; logging out removes the session but keeps the device
+      trust marker, so the next password login does not request OTP again.
+- [x] The trusted-device marker is bound to one user, has an expiry, and rejects
+      malformed or modified values.
+- [x] The main authenticated address is the neutral `/dashboard` route instead
+      of exposing `/hirer` on the overview page.
+- [x] Visible `Task #<database-id>` labels were removed from the dashboard and
+      AI assistant; internal IDs remain only in API calls and route parameters.
+- [x] Typography uses one Vietnamese-capable family (`Be Vietnam Pro`) with a
+      16px base, 13px minimum caption token, fixed heading/display scale,
+      consistent line height, and readable metadata contrast.
+- [x] All hard-coded UI font classes below 12px were removed; chart labels were
+      raised to 13px.
+- [x] Wallet balance/history now show an explicit API error state. Production
+      nạp/rút actions are disabled and described honestly until a real payment
+      provider is connected; the UI no longer pretends that VietQR/MoMo was
+      completed while backend cash simulation is disabled.
+- [x] Frontend production build passes.
+- [x] Backend full test suite passes: 151 tests, 0 failures.
+- [x] Deploy backend trusted-device/Google/wallet changes to Lambda; the
+      CloudFormation stack reached `UPDATE_COMPLETE` and `/api/health` returned
+      `UP`.
+- [ ] Deploy frontend role chooser, typography, wallet and `/dashboard` changes
+      to Amplify.
+- [ ] Verify Google new-user role selection, trusted login, dashboard and wallet
+      with a real browser session on `https://taskhubvn.com`.
 
 Do not mark an external item complete until it has been verified in the live
 environment.
