@@ -42,7 +42,7 @@ public class GoogleIdentityService {
             return new GoogleIdentity(
                     payload.getSubject(), email, value(payload.get("name")),
                     value(payload.get("picture")));
-        } catch (GeneralSecurityException | IOException e) {
+        } catch (GeneralSecurityException | IOException | IllegalArgumentException e) {
             throw TaskHubException.unauthorized("Không thể xác minh phiên đăng nhập Google");
         }
     }

@@ -160,6 +160,30 @@ The API key must stay in the backend environment only. See
 `docs/AUTH_OTP_ROLLOUT.md` for the live rollout checklist and verification
 steps.
 
+## Google sign-in client ID
+
+Google Identity Services creates the ID token in the frontend, while the
+backend verifies its audience. Both sides must use the same public OAuth Web
+client ID:
+
+```text
+Frontend (Amplify): VITE_GOOGLE_CLIENT_ID
+Backend (Lambda):   APP_GOOGLE_CLIENT_ID
+SAM parameter:      AppGoogleClientId
+```
+
+For the current production deployment, use the client ID already configured on
+the Amplify app and pass it to SAM:
+
+```powershell
+sam deploy --parameter-overrides `
+  AppGoogleClientId="<same value as Amplify VITE_GOOGLE_CLIENT_ID>"
+```
+
+If the backend value is empty, Google renders in the frontend but the API
+returns `Đăng nhập Google chưa được cấu hình`. A different value causes Google
+tokens to fail audience verification.
+
 ## Environment used by Lambda
 
 The SAM template sets:

@@ -9,6 +9,9 @@ changes.
 ## Implementation checklist
 
 - [x] Google registration creates an email-verified TaskHub account without OTP.
+- [x] Amplify `VITE_GOOGLE_CLIENT_ID` and Lambda `APP_GOOGLE_CLIENT_ID` use the
+      same production OAuth Web client ID.
+- [x] Malformed Google credentials return HTTP 401 instead of an internal error.
 - [x] Email/password registration creates a hashed six-digit OTP challenge.
 - [x] Login OTP and registration OTP expire after 10 minutes.
 - [x] OTP resend is rate-limited and invalidates the previous active challenge.
@@ -18,8 +21,8 @@ changes.
       and the AWS SAM template.
 - [x] Browser refresh-token cookies require the SPA CSRF header; API clients can
       still submit a refresh token in the request body.
-- [x] Resend/OTP tests pass (9 tests) and the full backend suite passes
-      (145 tests).
+- [x] Resend/OTP tests pass (9 tests), Google identity tests pass (2 tests),
+      and the full backend suite passes (147 tests).
 - [x] The Amplify production bundle builds locally and returns HTTP 200 for `/`
       and `/login`.
 - [x] Confirmed that `taskhubvn.com` DNS is managed by Cloudflare
@@ -49,6 +52,8 @@ environment.
 - CloudFormation stack: `taskhub-backend` / `UPDATE_COMPLETE`
 - Lambda mail configuration: provider `resend`, delivery enabled, sender
   `TaskHub <otp@mail.taskhubvn.com>`, API key present (value not read or logged)
+- Google Identity configuration: Lambda client ID matches the Amplify app;
+  production malformed-token smoke test returns HTTP 401 `UNAUTHORIZED`
 - Production API: `https://6meekld3r6.execute-api.ap-southeast-1.amazonaws.com/Prod/`
 - Production OTP test recipient:
   `huynhld.ai+taskhubotp20260722174107@gmail.com`
