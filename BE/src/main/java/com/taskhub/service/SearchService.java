@@ -61,11 +61,10 @@ public class SearchService {
     public PageResponse<PublicTaskResponse> searchTasks(
             String keyword, String category, String ignoredStatus, PageRequestDto pageReq) {
         var pageable = org.springframework.data.domain.PageRequest.of(
-                pageReq.getPage(), Math.min(pageReq.getSize(), 50),
-                Sort.by(Sort.Direction.DESC, "createdAt"));
+                pageReq.getPage(), Math.min(pageReq.getSize(), 50));
 
         Page<Task> page = taskRepository.searchPublicTasks(
-                TaskStatus.ACTIVE, normalizeFilter(keyword), normalizeFilter(category),
+                TaskStatus.ACTIVE.name(), normalizeFilter(keyword), normalizeFilter(category),
                 LocalDateTime.now(), pageable);
 
         return PageResponse.<PublicTaskResponse>builder()

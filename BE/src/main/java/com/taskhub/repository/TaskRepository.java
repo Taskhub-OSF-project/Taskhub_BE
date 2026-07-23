@@ -53,25 +53,28 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
     Page<Task> findByStatus(TaskStatus status, Pageable pageable);
 
     @Query(value = """
-            SELECT t FROM Task t
+            SELECT * FROM tasks t
             WHERE t.status = :status
               AND t.deadline > :now
-              AND (:category IS NULL OR LOWER(t.category) = LOWER(:category))
-              AND (:keyword IS NULL
-                   OR LOWER(t.title) LIKE LOWER(CONCAT('%', :keyword, '%'))
-                   OR LOWER(t.description) LIKE LOWER(CONCAT('%', :keyword, '%'))
-                   OR LOWER(t.category) LIKE LOWER(CONCAT('%', :keyword, '%')))
-            """, countQuery = """
-            SELECT COUNT(t.id) FROM Task t
+              AND (CAST(:category AS text) IS NULL OR LOWER(t.category) = LOWER(CAST(:category AS text)))
+              AND (CAST(:keyword AS text) IS NULL
+                   OR LOWER(t.title) LIKE LOWER('%' || CAST(:keyword AS text) || '%')
+                   OR LOWER(t.description) LIKE LOWER('%' || CAST(:keyword AS text) || '%')
+                   OR LOWER(t.category) LIKE LOWER('%' || CAST(:keyword AS text) || '%'))
+            ORDER BY t.created_at DESC
+            """,
+            countQuery = """
+            SELECT COUNT(t.id) FROM tasks t
             WHERE t.status = :status
               AND t.deadline > :now
-              AND (:category IS NULL OR LOWER(t.category) = LOWER(:category))
-              AND (:keyword IS NULL
-                   OR LOWER(t.title) LIKE LOWER(CONCAT('%', :keyword, '%'))
-                   OR LOWER(t.description) LIKE LOWER(CONCAT('%', :keyword, '%'))
-                   OR LOWER(t.category) LIKE LOWER(CONCAT('%', :keyword, '%')))
-            """)
-    Page<Task> searchPublicTasks(@Param("status") TaskStatus status,
+              AND (CAST(:category AS text) IS NULL OR LOWER(t.category) = LOWER(CAST(:category AS text)))
+              AND (CAST(:keyword AS text) IS NULL
+                   OR LOWER(t.title) LIKE LOWER('%' || CAST(:keyword AS text) || '%')
+                   OR LOWER(t.description) LIKE LOWER('%' || CAST(:keyword AS text) || '%')
+                   OR LOWER(t.category) LIKE LOWER('%' || CAST(:keyword AS text) || '%'))
+            """,
+            nativeQuery = true)
+    Page<Task> searchPublicTasks(@Param("status") String status,
             @Param("keyword") String keyword,
             @Param("category") String category,
             @Param("now") LocalDateTime now,

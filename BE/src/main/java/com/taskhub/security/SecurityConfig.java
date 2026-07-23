@@ -84,7 +84,10 @@ public class SecurityConfig {
                             "/api/health",
                             "/api/auth/**",
                             "/api/ai/public/chat",
-                            "/api/reviews/latest"
+                            "/api/reviews/latest",
+                            // MoMo callback – gọi từ server MoMo, không có JWT
+                            "/api/momo/deposit/callback",
+                            "/api/momo/deposit/return"
                     ).permitAll();
                     a.requestMatchers("/api/ai/**").authenticated();
                     if (devProfile) {
