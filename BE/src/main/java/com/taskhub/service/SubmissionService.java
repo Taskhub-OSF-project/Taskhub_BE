@@ -72,9 +72,14 @@ public class SubmissionService {
             throw TaskHubException.forbidden("Not assigned to you");
         }
 
-        List<SubmittedFileDto> submittedFiles = normalizeSubmittedFiles(req, taskId, student.getId());
-        if (submittedFiles.isEmpty()) {
-            throw TaskHubException.badRequest("submittedFiles is required for precheck");
+        // For precheck, accept either full submittedFiles list or a simple fileUrl/notes.
+        // We only need file metadata for AI keyword matching, so path validation is skipped here.
+        List<SubmittedFileDto> submittedFiles = buildPrecheckFiles(req);
+        boolean hasContent = !submittedFiles.isEmpty()
+                || (req.getNotes() != null && !req.getNotes().isBlank())
+                || (req.getFileUrl() != null && !req.getFileUrl().isBlank());
+        if (!hasContent) {
+            throw TaskHubException.badRequest("At least one of submittedFiles, fileUrl, or notes is required for precheck");
         }
 
         List<String> criteria = task.getAcceptanceCriteria().stream()
@@ -86,11 +91,45 @@ public class SubmissionService {
         task.setLatestPrecheckAt(result.getEvaluatedAt());
         task.setPrecheckStudentId(student.getId());
         task.setPrecheckCanSubmit(result.isCanSubmit());
-        task.setPrecheckSubmittedFilePathsJson(toJsonStringList(extractSortedPaths(submittedFiles)));
+        if (!submittedFiles.isEmpty()) {
+            task.setPrecheckSubmittedFilePathsJson(toJsonStringList(extractSortedPaths(submittedFiles)));
+        }
         taskRepo.save(task);
 
         return result;
     }
+
+    /**
+     * Build a lightweight list of file DTOs for precheck AI keyword matching.
+     * Accepts either validated submittedFiles or a simple fileUrl fallback.
+     * Does NOT enforce path/contentType/size constraints (those are for actual submission).
+     */
+    private List<SubmittedFileDto> buildPrecheckFiles(SubmissionRequest req) {
+        // Prefer validated list if provided
+        if (req.getSubmittedFiles() != null && !req.getSubmittedFiles().isEmpty()) {
+            List<SubmittedFileDto> safe = new ArrayList<>();
+            for (SubmittedFileDto f : req.getSubmittedFiles()) {
+                if (f != null && f.getFileName() != null) {
+                    safe.add(f);
+                }
+            }
+            if (!safe.isEmpty()) return safe;
+        }
+        // Fallback: build a synthetic DTO from fileUrl so AI can still read the filename
+        if (req.getFileUrl() != null && !req.getFileUrl().isBlank()) {
+            String url = req.getFileUrl();
+            String fileName = url.contains("/") ? url.substring(url.lastIndexOf('/') + 1) : url;
+            return List.of(SubmittedFileDto.builder()
+                    .fileName(fileName)
+                    .path(url)
+                    .url(url)
+                    .contentType("application/octet-stream")
+                    .size(1L)
+                    .build());
+        }
+        return List.of();
+    }
+
 
     @Transactional
     public SubmissionResponse submit(Long taskId, SubmissionRequest req) {
@@ -545,10 +584,14 @@ public class SubmissionService {
             throw TaskHubException.badRequest("Latest precheck does not allow submission");
         }
 
-        List<String> precheckPaths = fromStringListJson(task.getPrecheckSubmittedFilePathsJson());
-        List<String> submitPaths = extractSortedPaths(submittedFiles);
-        if (!precheckPaths.equals(submitPaths)) {
-            throw TaskHubException.badRequest("Submitted files changed after precheck. Please run precheck again.");
+        // Only compare file paths when submittedFiles were explicitly provided.
+        // When using legacy fileUrl mode (mobile app), skip path comparison.
+        if (!submittedFiles.isEmpty()) {
+            List<String> precheckPaths = fromStringListJson(task.getPrecheckSubmittedFilePathsJson());
+            List<String> submitPaths = extractSortedPaths(submittedFiles);
+            if (!precheckPaths.equals(submitPaths)) {
+                throw TaskHubException.badRequest("Submitted files changed after precheck. Please run precheck again.");
+            }
         }
     }
 

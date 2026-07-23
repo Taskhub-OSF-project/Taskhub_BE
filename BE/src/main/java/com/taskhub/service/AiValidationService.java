@@ -262,6 +262,7 @@ public class AiValidationService {
                 .criteriaResults(results)
                 .canSubmit(canSubmit)
                 .evaluatedAt(java.time.LocalDateTime.now())
+                .summary(metCount + "/" + total + " tiêu chí đạt yêu cầu.")
                 .build();
     }
 

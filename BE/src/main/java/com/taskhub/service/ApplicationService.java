@@ -91,7 +91,10 @@ public class ApplicationService {
         // Reject other applications
         appRepo.findByTaskId(task.getId()).stream()
                 .filter(a -> !a.getId().equals(applicationId))
-                .forEach(a -> { a.setStatus(ApplicationStatus.REJECTED); appRepo.save(a); });
+                .forEach(a -> {
+                    a.setStatus(ApplicationStatus.REJECTED);
+                    appRepo.save(a);
+                });
     }
 
     public PageResponse<ApplicationResponse> getTaskApplications(Long taskId, PageRequestDto pageReq) {
@@ -117,6 +120,7 @@ public class ApplicationService {
                 .build();
     }
 
+    @Transactional(readOnly = true)
     public PageResponse<ApplicationResponse> getMyApplications(PageRequestDto pageReq) {
         User student = AuthUtil.getCurrentUser();
         Page<TaskApplication> page = appRepo.findByStudentId(student.getId(),
@@ -131,6 +135,7 @@ public class ApplicationService {
                 .build();
     }
 
+    @Transactional(readOnly = true)
     public List<TaskResponse> getMyAppliedTasks() {
         User student = AuthUtil.getCurrentUser();
         if (student.getRole() != Role.STUDENT)
