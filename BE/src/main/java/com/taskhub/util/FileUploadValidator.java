@@ -14,13 +14,14 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 public final class FileUploadValidator {
-    public static final long MAX_FILE_SIZE_BYTES = 20L * 1024 * 1024;
+    public static final long MAX_FILE_SIZE_BYTES = 200L * 1024 * 1024;
 
     public static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
             "application/pdf",
             "image/png",
             "image/jpeg",
             "image/webp",
+            "application/msword",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             "application/zip",
             "application/x-zip-compressed"
@@ -37,11 +38,15 @@ public final class FileUploadValidator {
             throw TaskHubException.badRequest("File must not be empty");
         }
         if (file.getSize() > MAX_FILE_SIZE_BYTES) {
-            throw TaskHubException.badRequest("File size must not exceed 20MB");
+            throw TaskHubException.badRequest("File size must not exceed 200MB");
         }
 
         String contentType = file.getContentType();
         String normalizedType = contentType == null ? "" : contentType.toLowerCase(Locale.ROOT);
+        String fileName = sanitizeOriginalFileName(file.getOriginalFilename()).toLowerCase(Locale.ROOT);
+        if (!hasAllowedExtension(fileName)) {
+            throw TaskHubException.badRequest("Unsupported file extension");
+        }
         if (!ALLOWED_CONTENT_TYPES.contains(normalizedType)) {
             throw TaskHubException.badRequest("Unsupported file content type: " + contentType);
         }
@@ -70,6 +75,8 @@ public final class FileUploadValidator {
             case "image/webp" -> read >= 12
                     && new String(header, 0, 4, java.nio.charset.StandardCharsets.US_ASCII).equals("RIFF")
                     && new String(header, 8, 4, java.nio.charset.StandardCharsets.US_ASCII).equals("WEBP");
+            case "application/msword" -> startsWith(header, read,
+                    new byte[]{(byte) 0xD0, (byte) 0xCF, 0x11, (byte) 0xE0, (byte) 0xA1, (byte) 0xB1, 0x1A, (byte) 0xE1});
             case "application/zip", "application/x-zip-compressed",
                  "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ->
                     isZipHeader(header, read);
@@ -121,6 +128,12 @@ public final class FileUploadValidator {
         return Arrays.equals(signature, new byte[]{0x50, 0x4b, 0x03, 0x04})
                 || Arrays.equals(signature, new byte[]{0x50, 0x4b, 0x05, 0x06})
                 || Arrays.equals(signature, new byte[]{0x50, 0x4b, 0x07, 0x08});
+    }
+
+    private static boolean hasAllowedExtension(String fileName) {
+        return fileName.endsWith(".pdf") || fileName.endsWith(".png") || fileName.endsWith(".jpg")
+                || fileName.endsWith(".jpeg") || fileName.endsWith(".webp") || fileName.endsWith(".doc")
+                || fileName.endsWith(".docx") || fileName.endsWith(".zip");
     }
 
     private static boolean startsWith(byte[] value, int valueLength, byte[] prefix) {

@@ -34,6 +34,7 @@ import java.time.LocalDate;
 import java.time.Period;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -73,7 +74,7 @@ public class UserService {
      * JWT mới mang role vừa đổi để FE cập nhật token.
      */
     @Transactional
-    public AuthResponse switchRoleAndReturnToken(Long userId) {
+    public AuthResponse switchRoleAndReturnToken(Long userId, Role target) {
         User user = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> TaskHubException.notFound("User not found"));
 
@@ -81,20 +82,27 @@ public class UserService {
         if (current == Role.ADMIN) {
             throw TaskHubException.badRequest("Admin account cannot switch roles");
         }
+        if (target == null || target == Role.ADMIN || !user.getRoles().contains(target)) {
+            throw TaskHubException.forbidden("Account does not own the requested role");
+        }
+        if (current == target) return issueRoleSwitchResponse(user, target);
         requireRoleSwitchAllowed(userId);
-        Role target = (current == Role.HIRER) ? Role.STUDENT : Role.HIRER;
         user.setRole(target);
         user = userRepository.save(user);
-        refreshTokenRepository.revokeAllByUserId(userId);
+        return issueRoleSwitchResponse(user, target);
+    }
+
+    private AuthResponse issueRoleSwitchResponse(User user, Role target) {
+        refreshTokenRepository.revokeAllByUserId(user.getId());
 
         String rawRefreshToken = TokenHasher.randomToken();
         refreshTokenRepository.save(RefreshToken.builder()
-                .userId(userId)
+                .userId(user.getId())
                 .tokenHash(TokenHasher.sha256(rawRefreshToken))
                 .expiresAt(LocalDateTime.now().plusSeconds(jwtService.getRefreshExpirationMs() / 1000))
                 .revoked(false)
                 .build());
-        auditService.record("ROLE_SWITCH", user.getEmail(), "Switched from " + current + " to " + target);
+        auditService.record("ROLE_SWITCH", user.getEmail(), "Active role is " + target);
 
         String newToken = jwtService.generateAccessToken(user.getId(), user.getEmail(), target.name());
         return AuthResponse.builder()
@@ -105,6 +113,7 @@ public class UserService {
                 .email(user.getEmail())
                 .fullName(user.getFullName())
                 .role(target)
+                .roles(user.getRoles())
                 .build();
     }
 
@@ -322,7 +331,7 @@ public class UserService {
                 .title(user.getTitle()).hourlyRate(user.getHourlyRate())
                 .availability(user.getAvailability()).languages(user.getLanguages())
                 .certifications(user.getCertifications()).avatarUrl(user.getAvatarUrl())
-                .role(user.getRole().name()).roleEnum(user.getRole())
+                .role(user.getRole().name()).roleEnum(user.getRole()).roles(user.getRoles())
                 .walletBalance(includeSensitive ? user.getWalletBalance() : null)
                 .isVerified(user.getIsVerified()).isAvailable(user.getIsAvailable())
                 .isBanned(includeSensitive ? user.getIsBanned() : null)

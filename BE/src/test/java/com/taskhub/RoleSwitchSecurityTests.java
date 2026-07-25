@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.EnumSet;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -35,7 +36,7 @@ class RoleSwitchSecurityTests {
         taskRepository.save(task(hirer, null, TaskStatus.DRAFT));
 
         assertThrows(TaskHubException.class,
-                () -> userService.switchRoleAndReturnToken(hirer.getId()));
+                () -> userService.switchRoleAndReturnToken(hirer.getId(), Role.STUDENT));
     }
 
     @Test
@@ -45,7 +46,7 @@ class RoleSwitchSecurityTests {
         taskRepository.save(task(hirer, student, TaskStatus.IN_PROGRESS));
 
         assertThrows(TaskHubException.class,
-                () -> userService.switchRoleAndReturnToken(student.getId()));
+                () -> userService.switchRoleAndReturnToken(student.getId(), Role.HIRER));
     }
 
     @Test
@@ -57,7 +58,7 @@ class RoleSwitchSecurityTests {
                 .expiresAt(LocalDateTime.now().plusDays(1))
                 .build());
 
-        var response = userService.switchRoleAndReturnToken(student.getId());
+        var response = userService.switchRoleAndReturnToken(student.getId(), Role.HIRER);
 
         assertEquals(Role.HIRER, response.getRole());
         assertNotNull(response.getToken());
@@ -66,6 +67,20 @@ class RoleSwitchSecurityTests {
         assertTrue(refreshTokenRepository.findAll().stream()
                 .anyMatch(token -> !token.isRevoked()
                         && token.getTokenHash().equals(TokenHasher.sha256(response.getRefreshToken()))));
+    }
+
+    @Test
+    void cannotSwitchToRoleTheAccountDoesNotOwn() {
+        User student = userRepository.save(User.builder()
+                .email("role-forbidden@example.com")
+                .password("encoded")
+                .fullName("Single role")
+                .role(Role.STUDENT)
+                .roles(EnumSet.of(Role.STUDENT))
+                .build());
+
+        assertThrows(TaskHubException.class,
+                () -> userService.switchRoleAndReturnToken(student.getId(), Role.HIRER));
     }
 
     @Test
@@ -89,6 +104,7 @@ class RoleSwitchSecurityTests {
                 .password("encoded")
                 .fullName("Role Test")
                 .role(role)
+                .roles(EnumSet.of(Role.HIRER, Role.STUDENT))
                 .build());
     }
 

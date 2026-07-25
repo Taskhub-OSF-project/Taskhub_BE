@@ -62,7 +62,7 @@ class SearchAndBroadcastSecurityTests {
                 .deadline(LocalDateTime.now().plusDays(2)).status(TaskStatus.ACTIVE)
                 .hirer(hirer).build();
         var requestedPage = org.springframework.data.domain.PageRequest.of(0, 2);
-        when(taskRepository.searchPublicTasks(eq(TaskStatus.ACTIVE), eq("java"), eq("Web"),
+        when(taskRepository.searchPublicTasks(eq(TaskStatus.ACTIVE.name()), eq("java"), eq("Web"),
                 any(LocalDateTime.class), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(task), requestedPage, 12));
 
@@ -73,7 +73,7 @@ class SearchAndBroadcastSecurityTests {
         assertThat(response.getTotalElements()).isEqualTo(12);
         assertThat(response.getTotalPages()).isEqualTo(6);
         ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
-        verify(taskRepository).searchPublicTasks(eq(TaskStatus.ACTIVE), eq("java"), eq("Web"),
+        verify(taskRepository).searchPublicTasks(eq(TaskStatus.ACTIVE.name()), eq("java"), eq("Web"),
                 any(LocalDateTime.class), pageable.capture());
         assertThat(pageable.getValue().getPageNumber()).isZero();
     }

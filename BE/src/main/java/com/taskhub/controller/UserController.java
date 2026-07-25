@@ -2,6 +2,7 @@ package com.taskhub.controller;
 
 import com.taskhub.dto.request.ChangePasswordRequest;
 import com.taskhub.dto.request.UpdateProfileRequest;
+import com.taskhub.dto.request.SwitchRoleRequest;
 import com.taskhub.dto.response.ApiResponse;
 import com.taskhub.dto.response.UserProfileResponse;
 import com.taskhub.security.AuthUtil;
@@ -54,11 +55,12 @@ public class UserController {
 
     @PostMapping("/switch-role")
     public ResponseEntity<ApiResponse<com.taskhub.dto.response.AuthResponse>> switchRole(
+            @Valid @RequestBody SwitchRoleRequest req,
             @RequestHeader(name = "X-Requested-With", required = false) String requestedWith,
             HttpServletResponse response) {
         Long userId = AuthUtil.getCurrentUser().getId();
         var auth = refreshTokenCookies.processRefreshToken(
-                response, userService.switchRoleAndReturnToken(userId), requestedWith);
+                response, userService.switchRoleAndReturnToken(userId, req.getRole()), requestedWith);
         return ResponseEntity.ok(ApiResponse.ok("Role switched", auth));
     }
 

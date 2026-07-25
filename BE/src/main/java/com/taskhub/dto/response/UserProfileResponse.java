@@ -6,6 +6,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 
 @Data @Builder @NoArgsConstructor @AllArgsConstructor
 public class UserProfileResponse {
@@ -41,6 +42,7 @@ public class UserProfileResponse {
     private Long completedTasksAsHirer;
     private String memberSince;
     private Role roleEnum;
+    private Set<Role> roles;
     private boolean emailVerified;
     private LocalDateTime createdAt;
 }

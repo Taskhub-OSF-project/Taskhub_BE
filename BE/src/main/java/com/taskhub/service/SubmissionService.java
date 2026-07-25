@@ -475,7 +475,7 @@ public class SubmissionService {
             throw TaskHubException.badRequest("Unsupported submittedFiles.contentType: " + contentType);
         }
         if (file.getSize() == null || file.getSize() <= 0 || file.getSize() > FileUploadValidator.MAX_FILE_SIZE_BYTES) {
-            throw TaskHubException.badRequest("submittedFiles.size must be greater than 0 and not exceed 20MB");
+            throw TaskHubException.badRequest("submittedFiles.size must be greater than 0 and not exceed 200MB");
         }
     }
 

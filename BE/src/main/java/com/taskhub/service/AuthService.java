@@ -41,6 +41,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Map;
+import java.util.EnumSet;
 import java.util.UUID;
 import java.security.MessageDigest;
 import java.nio.charset.StandardCharsets;
@@ -107,6 +108,7 @@ public class AuthService {
                 .university(trimToNull(req.getUniversity()))
                 .major(trimToNull(req.getMajor()))
                 .role(req.getRole())
+                .roles(EnumSet.of(req.getRole()))
                 .dateOfBirth(dateOfBirth)
                 .phone(phone)
                 .isVerified(false)
@@ -146,6 +148,7 @@ public class AuthService {
                             .password(passwordEncoder.encode(TokenHasher.randomToken()))
                             .fullName(fullName)
                             .role(role)
+                            .roles(EnumSet.of(role))
                             .avatarUrl(avatarUrl)
                             .emailVerified(true)
                             .isVerified(false)
@@ -531,6 +534,7 @@ public class AuthService {
                 .email(user.getEmail())
                 .fullName(user.getFullName())
                 .role(user.getRole())
+                .roles(user.getRoles())
                 .emailVerified(user.isEmailVerified())
                 .verificationRequired(requireEmailVerification && !user.isEmailVerified())
                 .build();
@@ -543,6 +547,7 @@ public class AuthService {
                 .email(user.getEmail())
                 .fullName(user.getFullName())
                 .role(user.getRole())
+                .roles(user.getRoles())
                 .emailVerified(user.isEmailVerified())
                 .verificationRequired(verificationRequired)
                 .emailOtpRequired(true)

@@ -95,7 +95,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<ApiResponse<Void>> handleMaxUploadSize(MaxUploadSizeExceededException ex) {
-        return ResponseEntity.badRequest().body(ApiResponse.error("File size must not exceed 20MB"));
+        return ResponseEntity.badRequest().body(ApiResponse.error("File size must not exceed 200MB"));
     }
 
     @ExceptionHandler({
@@ -104,7 +104,12 @@ public class GlobalExceptionHandler {
             MissingServletRequestParameterException.class
     })
     public ResponseEntity<ApiResponse<Void>> handleMultipart(Exception ex) {
-        return ResponseEntity.badRequest().body(ApiResponse.error("Invalid multipart request"));
+        String message = ex instanceof MissingServletRequestPartException
+                ? "Thiếu file trong yêu cầu upload"
+                : ex instanceof MissingServletRequestParameterException
+                    ? "Thiếu thông tin taskId trong yêu cầu upload"
+                    : "Yêu cầu upload không hợp lệ. Vui lòng chọn lại file và thử lại.";
+        return ResponseEntity.badRequest().body(ApiResponse.error(message));
     }
 
     /**

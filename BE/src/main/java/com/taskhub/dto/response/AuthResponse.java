@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.taskhub.enums.Role;
 import lombok.*;
 import java.time.Instant;
+import java.util.Set;
 
 @Data @Builder @NoArgsConstructor @AllArgsConstructor
 public class AuthResponse {
@@ -20,6 +21,7 @@ public class AuthResponse {
     private String email;
     private String fullName;
     private Role role;
+    private Set<Role> roles;
     private boolean emailVerified;
     private boolean verificationRequired;
     private boolean emailOtpRequired;
