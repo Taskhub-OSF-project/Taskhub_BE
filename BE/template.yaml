@@ -95,7 +95,7 @@ Resources:
           SPRING_DATASOURCE_URL: !Ref SpringDatasourceUrl
           SPRING_DATASOURCE_USERNAME: !Ref SpringDatasourceUsername
           SPRING_DATASOURCE_PASSWORD: !Ref SpringDatasourcePassword
-          SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+          SPRING_JPA_HIBERNATE_DDL_AUTO: 'none'
           SPRING_JPA_SHOW_SQL: 'false'
           SPRING_FLYWAY_ENABLED: 'true'
           SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: '4'
