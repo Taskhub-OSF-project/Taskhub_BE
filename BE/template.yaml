@@ -67,6 +67,8 @@ Resources:
       StageName: Prod
       BinaryMediaTypes:
         - multipart/form-data
+        - multipart/*
+        - '*/*'
       MethodSettings:
         - ResourcePath: '/*'
           HttpMethod: '*'
