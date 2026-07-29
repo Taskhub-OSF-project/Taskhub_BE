@@ -36,6 +36,7 @@ public class AdminController {
     private final DisputeService disputeService;
     private final NotificationService notificationService;
     private final TaskRemovalService taskRemovalService;
+    private final com.taskhub.service.MomoService momoService;
 
     @GetMapping("/dashboard")
     public ResponseEntity<ApiResponse<AdminDashboardResponse>> getDashboard() {
@@ -141,5 +142,32 @@ public class AdminController {
             @Valid @RequestBody TaskRemovalResolveDto req) {
         return ResponseEntity.ok(ApiResponse.ok("Removal request resolved",
                 taskRemovalService.resolveRemovalRequest(id, req)));
+    }
+    
+    // ─── Quản lý Rút Tiền (MoMo) ─────────────────────────────────────────────
+
+    @GetMapping("/withdrawals")
+    public ResponseEntity<ApiResponse<org.springframework.data.domain.Page<com.taskhub.entity.MomoTransaction>>> getWithdrawals(
+            @RequestParam(required = false) com.taskhub.enums.MomoTransactionStatus status,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(page, size, org.springframework.data.domain.Sort.by("createdAt").descending());
+        return ResponseEntity.ok(ApiResponse.ok("Lấy danh sách rút tiền thành công",
+                momoService.getWithdrawals(status, pageable)));
+    }
+
+    @PostMapping("/withdrawals/{id}/complete")
+    public ResponseEntity<ApiResponse<Void>> completeWithdrawal(@PathVariable Long id) {
+        momoService.completeWithdrawal(id);
+        return ResponseEntity.ok(ApiResponse.ok("Đã xác nhận thanh toán thành công", null));
+    }
+
+    @PostMapping("/withdrawals/{id}/reject")
+    public ResponseEntity<ApiResponse<Void>> rejectWithdrawal(
+            @PathVariable Long id,
+            @RequestBody(required = false) Map<String, String> body) {
+        String reason = body != null ? body.get("reason") : "Không hợp lệ";
+        momoService.rejectWithdrawal(id, reason);
+        return ResponseEntity.ok(ApiResponse.ok("Đã từ chối yêu cầu rút tiền", null));
     }
 }

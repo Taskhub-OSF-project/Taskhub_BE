@@ -201,7 +201,7 @@ public class MomoService {
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * Xử lý yêu cầu rút tiền từ ví TaskHub về ví MoMo.
+     * Xử lý yêu cầu rút tiền từ ví TaskHub về ví MoMo. (Chuyển sang xử lý thủ công)
      */
     @Transactional
     public MomoWithdrawResponse requestWithdrawal(MomoWithdrawRequest request) {
@@ -219,7 +219,7 @@ public class MomoService {
 
         String orderId = generateOrderId("WIT");
 
-        // Trừ tiền ví trước (sẽ hoàn lại nếu MoMo thất bại)
+        // Trừ tiền ví trước (tạm giữ, nếu admin từ chối sẽ cộng lại)
         user.setWalletBalance(user.getWalletBalance().subtract(request.getAmount()));
         userRepository.save(user);
 
@@ -234,45 +234,73 @@ public class MomoService {
                 .build();
         momoTxRepo.save(tx);
 
-        // Gọi MoMo Disbursement API
-        try {
-            Map<String, Object> disburseBody = buildDisbursePayload(orderId, request);
-            Map<String, Object> momoResp = callMomoApi(momoProperties.getDisburseEndpoint(), disburseBody);
-            int resultCode = getInt(momoResp, "resultCode");
-
-            if (resultCode == 0) {
-                // Thành công
-                String momoTransId = getString(momoResp, "transId");
-                tx.setStatus(MomoTransactionStatus.SUCCESS);
-                tx.setMomoTransId(momoTransId);
-                tx.setResultCode(resultCode);
-                walletService.recordTransaction(user, WalletTransactionType.withdrawal,
-                        request.getAmount().negate(), null);
-                momoTxRepo.save(tx);
-                log.info("MoMo withdrawal SUCCESS: orderId={}, userId={}, amount={}",
-                        orderId, userId, request.getAmount());
-                return MomoWithdrawResponse.builder()
-                        .orderId(orderId)
-                        .status(MomoTransactionStatus.SUCCESS)
-                        .amount(request.getAmount())
-                        .newBalance(user.getWalletBalance())
-                        .momoTransId(momoTransId)
-                        .message("Rút tiền thành công! Tiền sẽ về ví MoMo trong vài phút.")
-                        .build();
-            } else {
-                // Thất bại – hoàn tiền
-                String errMsg = getString(momoResp, "message");
-                rollbackWithdrawal(user, tx, request.getAmount(), resultCode, errMsg);
-                throw TaskHubException.badRequest("Rút tiền thất bại: " + errMsg);
-            }
-        } catch (TaskHubException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("MoMo withdrawal API error: orderId={}", orderId, e);
-            rollbackWithdrawal(user, tx, request.getAmount(), -1, e.getMessage());
-            throw TaskHubException.internalError("Lỗi kết nối MoMo, vui lòng thử lại");
-        }
+        log.info("MoMo withdrawal request created (pending admin review): orderId={}, userId={}, amount={}",
+                orderId, userId, request.getAmount());
+                
+        return MomoWithdrawResponse.builder()
+                .orderId(orderId)
+                .status(MomoTransactionStatus.PENDING)
+                .amount(request.getAmount())
+                .newBalance(user.getWalletBalance())
+                .message("Yêu cầu rút tiền đã được gửi. Quản trị viên sẽ xử lý trong thời gian sớm nhất.")
+                .build();
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ADMIN ACTIONS (RÚT TIỀN THỦ CÔNG)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public org.springframework.data.domain.Page<MomoTransaction> getWithdrawals(MomoTransactionStatus status, org.springframework.data.domain.Pageable pageable) {
+        if (status != null) {
+            return momoTxRepo.findByTypeAndStatus(MomoTransactionType.WITHDRAWAL, status, pageable);
+        }
+        return momoTxRepo.findByType(MomoTransactionType.WITHDRAWAL, pageable);
+    }
+
+    @Transactional
+    public void completeWithdrawal(Long txId) {
+        MomoTransaction tx = momoTxRepo.findById(txId)
+                .orElseThrow(() -> TaskHubException.notFound("Transaction not found"));
+        
+        if (tx.getType() != MomoTransactionType.WITHDRAWAL || tx.getStatus() != MomoTransactionStatus.PENDING) {
+            throw TaskHubException.badRequest("Chỉ có thể hoàn thành yêu cầu rút tiền đang chờ xử lý (PENDING)");
+        }
+        
+        tx.setStatus(MomoTransactionStatus.SUCCESS);
+        tx.setResultCode(0);
+        tx.setUpdatedAt(LocalDateTime.now());
+        
+        // Ghi lại giao dịch WalletTransaction
+        walletService.recordTransaction(tx.getUser(), WalletTransactionType.withdrawal,
+                tx.getAmount().negate(), null);
+                
+        momoTxRepo.save(tx);
+        log.info("Admin completed withdrawal: txId={}, orderId={}", txId, tx.getOrderId());
+    }
+
+    @Transactional
+    public void rejectWithdrawal(Long txId, String reason) {
+        MomoTransaction tx = momoTxRepo.findById(txId)
+                .orElseThrow(() -> TaskHubException.notFound("Transaction not found"));
+        
+        if (tx.getType() != MomoTransactionType.WITHDRAWAL || tx.getStatus() != MomoTransactionStatus.PENDING) {
+            throw TaskHubException.badRequest("Chỉ có thể từ chối yêu cầu rút tiền đang chờ xử lý (PENDING)");
+        }
+        
+        // Hoàn lại tiền cho user
+        User user = userRepository.findByIdForUpdate(tx.getUser().getId())
+                .orElseThrow(() -> TaskHubException.notFound("User not found"));
+        user.setWalletBalance(user.getWalletBalance().add(tx.getAmount()));
+        userRepository.save(user);
+        
+        tx.setStatus(MomoTransactionStatus.FAILED);
+        tx.setErrorMessage(reason != null ? reason : "Bị từ chối bởi Admin");
+        tx.setUpdatedAt(LocalDateTime.now());
+                
+        momoTxRepo.save(tx);
+        log.info("Admin rejected withdrawal: txId={}, orderId={}, reason={}", txId, tx.getOrderId(), reason);
+    }
+
 
     // ─────────────────────────────────────────────────────────────────────────
     // Helpers – Payload builders
