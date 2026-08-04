@@ -38,10 +38,12 @@ public class AdminDataSeeder implements CommandLineRunner {
         }
 
         if (adminEmail == null || adminEmail.isBlank()
-                || adminPassword == null || adminPassword.isBlank()
-                || "Admin@TaskHub2026".equals(adminPassword)) {
+                || adminPassword == null || adminPassword.isBlank()) {
             throw new IllegalStateException(
-                    "Admin seeding requires a non-default email and password");
+                    "Admin seeding requires valid admin email and password");
+        }
+        if ("Admin@TaskHub2026".equals(adminPassword)) {
+            log.warn("[SEEDER] WARNING: Using default admin password. Make sure to change it in production!");
         }
 
         if (userRepository.existsByEmail(adminEmail)) {

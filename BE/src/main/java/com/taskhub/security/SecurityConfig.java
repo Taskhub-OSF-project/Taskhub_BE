@@ -31,11 +31,16 @@ import java.io.IOException;
 import java.util.List;
 
 /**
- * Spring Security configuration: stateless JWT, production CORS, secure headers.
+ * Spring Security configuration: stateless JWT, production CORS, secure
+ * headers.
  *
- * <p><b>CSRF:</b> Disabled globally because protected API calls use an in-memory Bearer token,
- * which browsers do not attach automatically. The two endpoints that consume the HttpOnly refresh
- * cookie require {@code X-Requested-With: XMLHttpRequest}; this forces a CORS preflight and blocks
+ * <p>
+ * <b>CSRF:</b> Disabled globally because protected API calls use an in-memory
+ * Bearer token,
+ * which browsers do not attach automatically. The two endpoints that consume
+ * the HttpOnly refresh
+ * cookie require {@code X-Requested-With: XMLHttpRequest}; this forces a CORS
+ * preflight and blocks
  * cross-site form submissions from untrusted origins.
  */
 @Configuration
@@ -64,13 +69,13 @@ public class SecurityConfig {
                     } else {
                         h.frameOptions(f -> f.deny());
                     }
-                    h.contentTypeOptions(c -> {});
+                    h.contentTypeOptions(c -> {
+                    });
                     h.httpStrictTransportSecurity(hsts -> hsts
                             .includeSubDomains(true)
                             .maxAgeInSeconds(31536000));
                     h.referrerPolicy(r -> r.policy(
-                            org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter
-                                    .ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN));
+                            org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN));
                 })
                 .exceptionHandling(e -> e
                         .authenticationEntryPoint(this::writeUnauthorized)
@@ -85,16 +90,14 @@ public class SecurityConfig {
                             "/api/auth/**",
                             "/api/ai/public/chat",
                             "/api/reviews/latest",
-                            // MoMo callback – gọi từ server MoMo, không có JWT
-                            "/api/momo/deposit/callback",
-                            "/api/momo/deposit/return"
-                    ).permitAll();
+                            // SePay API – Webhook gọi từ server SePay và config tài khoản Ngân hàng công
+                            // khai
+                            "/api/sepay/**").permitAll();
                     a.requestMatchers("/api/ai/**").authenticated();
                     if (devProfile) {
                         a.requestMatchers(
                                 "/h2-console/**",
-                                "/v3/api-docs/**"
-                        ).permitAll();
+                                "/v3/api-docs/**").permitAll();
                     }
                     a.anyRequest().authenticated();
                 })
@@ -119,8 +122,9 @@ public class SecurityConfig {
         List<String> origins = corsProperties.getAllowedOrigins();
         if (origins != null && !origins.isEmpty()) {
             config.setAllowedOriginPatterns(origins.stream()
-                .map(origin -> origin.replace("localhost:5173", "localhost:*").replace("127.0.0.1:5173", "127.0.0.1:*"))
-                .toList());
+                    .map(origin -> origin.replace("localhost:5173", "localhost:*").replace("127.0.0.1:5173",
+                            "127.0.0.1:*"))
+                    .toList());
         } else {
             config.setAllowedOriginPatterns(List.of("http://localhost:*", "http://127.0.0.1:*"));
         }
@@ -141,7 +145,7 @@ public class SecurityConfig {
     }
 
     private void writeUnauthorized(HttpServletRequest request, HttpServletResponse response,
-                                   org.springframework.security.core.AuthenticationException ex)
+            org.springframework.security.core.AuthenticationException ex)
             throws IOException {
         writeJson(response, HttpStatus.UNAUTHORIZED,
                 ApiResponse.error("Authentication required", "UNAUTHORIZED", null));

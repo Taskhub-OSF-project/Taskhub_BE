@@ -44,19 +44,17 @@ app:
       max-age-seconds: ${APP_TRUSTED_DEVICE_MAX_AGE_SECONDS:2592000}
   wallet:
     cash-simulation-enabled: ${APP_WALLET_CASH_SIMULATION_ENABLED:false}
-  momo:
-    partner-code: ${APP_MOMO_PARTNER_CODE:}
-    access-key: ${APP_MOMO_ACCESS_KEY:}
-    secret-key: ${APP_MOMO_SECRET_KEY:}
-    partner-name: ${APP_MOMO_PARTNER_NAME:TaskHub}
-    create-order-endpoint: ${APP_MOMO_CREATE_ORDER_ENDPOINT:https://test-payment.momo.vn/v2/gateway/api/create}
-    disburse-endpoint: ${APP_MOMO_DISBURSE_ENDPOINT:https://test-payment.momo.vn/v2/gateway/api/disbursement}
-    ipn-url: ${APP_MOMO_IPN_URL:http://localhost:8080/api/momo/deposit/callback}
-    return-url: ${APP_MOMO_RETURN_URL:taskhub://wallet/deposit/result}
-    min-deposit-amount: ${APP_MOMO_MIN_DEPOSIT:10000}
-    max-deposit-amount: ${APP_MOMO_MAX_DEPOSIT:50000000}
-    min-withdraw-amount: ${APP_MOMO_MIN_WITHDRAW:10000}
-    max-withdraw-amount: ${APP_MOMO_MAX_WITHDRAW:10000000}
+  sepay:
+    api-token: ${APP_SEPAY_API_TOKEN:}
+    bank-code: ${APP_SEPAY_BANK_CODE:MB}
+    bank-account: ${APP_SEPAY_BANK_ACCOUNT:021107082004}
+    bank-name: ${APP_SEPAY_BANK_NAME:MBBank}
+    account-name: ${APP_SEPAY_ACCOUNT_NAME:VO THANH KHOA}
+    qr-template: ${APP_SEPAY_QR_TEMPLATE:compact}
+    min-deposit-amount: ${APP_SEPAY_MIN_DEPOSIT:10000}
+    max-deposit-amount: ${APP_SEPAY_MAX_DEPOSIT:50000000}
+    min-withdraw-amount: ${APP_SEPAY_MIN_WITHDRAW:50000}
+    max-withdraw-amount: ${APP_SEPAY_MAX_WITHDRAW:100000000}
   bedrock:
     enabled: ${APP_BEDROCK_ENABLED:true}
     region: ${APP_BEDROCK_REGION:us-east-1}
@@ -85,7 +83,7 @@ app:
     from-email: ${APP_MAIL_FROM_EMAIL:}
     region: ${APP_MAIL_REGION:${AWS_REGION:ap-southeast-1}}
     resend:
-      api-key: ${APP_MAIL_RESEND_API_KEY:}
+      api-key: ${APP_MAIL_RESEND_API_KEY:}  
       endpoint: ${APP_MAIL_RESEND_ENDPOINT:https://api.resend.com/emails}
   rate-limit:
     login-per-minute: ${APP_RATE_LIMIT_LOGIN:10}
