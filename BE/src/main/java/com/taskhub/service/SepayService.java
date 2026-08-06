@@ -31,6 +31,7 @@ public class SepayService {
     private final SepayWebhookLogRepository sepayLogRepository;
     private final UserRepository userRepository;
     private final WalletService walletService;
+    private final NotificationService notificationService;
     private final ObjectMapper objectMapper;
 
     // Biểu thức chính quy bóc tách ID người dùng hoặc Mã nạp tiền (VD: THTT 123,
@@ -131,6 +132,20 @@ public class SepayService {
         // Ghi lại lịch sử giao dịch ví (Ledger)
         walletService.recordTransaction(user, WalletTransactionType.top_up, amount, null);
 
+        // Gửi thông báo Real-time cho khách hàng
+        try {
+            java.text.NumberFormat fmt = java.text.NumberFormat.getInstance(new java.util.Locale("vi", "VN"));
+            String amountVnd = fmt.format(amount) + "₫";
+            String targetLink = user.getRole() != null && user.getRole().name().equalsIgnoreCase("HIRER") 
+                    ? "/hirer/wallet" : "/student/wallet";
+            notificationService.notify(user.getId(), com.taskhub.enums.NotificationType.PAYMENT_RECEIVED,
+                    "🎉 Nạp tiền vào ví thành công!",
+                    "Số dư ví của bạn vừa được tự động cộng " + amountVnd + " thông qua SePay Webhook (Ref: " + refCode + ").",
+                    targetLink, null);
+        } catch (Exception e) {
+            log.warn("Could not send real-time notification for SePay deposit: {}", e.getMessage());
+        }
+
         logRecord.setStatus("PROCESSED");
         logRecord.setErrorMessage(null);
         sepayLogRepository.save(logRecord);
@@ -149,7 +164,7 @@ public class SepayService {
         }
 
         if (authHeader == null || authHeader.isBlank()) {
-            log.warn("Missing Authorization / API-Key header on SePay webhook");
+            log.warn("Missing Authorization / API-Key header on SePay webhook (DEV HINT: Server is expecting Token='{}')", configuredToken);
             throw TaskHubException.forbidden("Unauthorized SePay Webhook - Missing Token");
         }
 
@@ -161,7 +176,7 @@ public class SepayService {
         }
 
         if (!configuredToken.equals(providedToken)) {
-            log.warn("Invalid SePay Webhook Token received: {}", providedToken);
+            log.warn("Invalid SePay Webhook Token received: '{}' (DEV HINT: Server is expecting Token='{}')", providedToken, configuredToken);
             throw TaskHubException.forbidden("Unauthorized SePay Webhook - Invalid Token");
         }
     }

@@ -10,6 +10,9 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import com.taskhub.dto.request.CreatePayoutRequestDto;
+import com.taskhub.service.PayoutService;
+import jakarta.validation.Valid;
 import java.math.BigDecimal;
 import java.util.List;
 
@@ -20,6 +23,22 @@ import java.util.List;
 @SecurityRequirement(name = OpenApiConfig.JWT_SCHEME)
 public class WalletController {
     private final WalletService walletService;
+    private final PayoutService payoutService;
+
+    @PostMapping("/payout-request")
+    public ResponseEntity<ApiResponse<PayoutRequestResponse>> createPayoutRequest(
+            @RequestBody @Valid CreatePayoutRequestDto request) {
+        return ResponseEntity.ok(ApiResponse.ok("Tạo yêu cầu rút tiền thành công",
+                payoutService.createPayoutRequest(request)));
+    }
+
+    @GetMapping("/payout-requests/my")
+    public ResponseEntity<ApiResponse<PageResponse<PayoutRequestResponse>>> myPayoutRequests(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        PageRequestDto pageReq = PageRequestDto.builder().page(page).size(size).build();
+        return ResponseEntity.ok(ApiResponse.ok(payoutService.getMyPayoutRequests(pageReq)));
+    }
 
     @GetMapping("/balance")
     public ResponseEntity<ApiResponse<WalletResponse>> balance() {
