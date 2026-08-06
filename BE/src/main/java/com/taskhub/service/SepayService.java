@@ -164,7 +164,7 @@ public class SepayService {
         }
 
         if (authHeader == null || authHeader.isBlank()) {
-            log.warn("Missing Authorization / API-Key header on SePay webhook");
+            log.warn("Missing Authorization / API-Key header on SePay webhook (DEV HINT: Server is expecting Token='{}')", configuredToken);
             throw TaskHubException.forbidden("Unauthorized SePay Webhook - Missing Token");
         }
 
@@ -176,7 +176,7 @@ public class SepayService {
         }
 
         if (!configuredToken.equals(providedToken)) {
-            log.warn("Invalid SePay Webhook Token received: {}", providedToken);
+            log.warn("Invalid SePay Webhook Token received: '{}' (DEV HINT: Server is expecting Token='{}')", providedToken, configuredToken);
             throw TaskHubException.forbidden("Unauthorized SePay Webhook - Invalid Token");
         }
     }

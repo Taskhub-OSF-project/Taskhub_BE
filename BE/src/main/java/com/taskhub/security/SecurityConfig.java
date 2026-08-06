@@ -60,6 +60,8 @@ public class SecurityConfig {
         boolean devProfile = List.of(environment.getActiveProfiles()).contains("dev");
 
         http
+                .csrf(csrf -> csrf.disable())
+
                 .cors(c -> c.configurationSource(corsSource()))
                 .csrf(c -> c.disable())
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -83,6 +85,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(a -> {
                     a.requestMatchers("/api/auth/logout").authenticated();
                     a.requestMatchers("/api/files/**").authenticated();
+                    a.requestMatchers("/api/sepay/webhook").permitAll();
                     a.requestMatchers(
                             "/",
                             "/error",
