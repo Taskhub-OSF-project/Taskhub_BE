@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
@@ -17,6 +18,7 @@ public class AdminDataSeeder implements CommandLineRunner {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final JdbcTemplate jdbcTemplate;
 
     @Value("${app.admin.email:admin@taskhub.com}")
     private String adminEmail;
@@ -32,6 +34,15 @@ public class AdminDataSeeder implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
+        // Tự động gỡ bỏ các ràng buộc CHECK constraint cũ của PostgreSQL khi mở rộng Enum
+        try {
+            jdbcTemplate.execute("ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;");
+            jdbcTemplate.execute("ALTER TABLE wallet_transactions DROP CONSTRAINT IF EXISTS wallet_transactions_type_check;");
+            log.info("[SCHEMA-FIX] Successfully removed obsolete enum CHECK constraints from PostgreSQL database.");
+        } catch (Exception e) {
+            log.warn("[SCHEMA-FIX] Could not check/drop DB constraints: {}", e.getMessage());
+        }
+
         if (!seederEnabled) {
             log.info("[SEEDER] Admin seeder is disabled (app.admin.enabled=false)");
             return;

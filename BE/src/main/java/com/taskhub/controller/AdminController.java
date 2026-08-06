@@ -21,6 +21,9 @@ import com.taskhub.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import com.taskhub.dto.request.ResolvePayoutRequestDto;
+import com.taskhub.dto.response.PayoutRequestResponse;
+import com.taskhub.service.PayoutService;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
@@ -36,6 +39,25 @@ public class AdminController {
     private final DisputeService disputeService;
     private final NotificationService notificationService;
     private final TaskRemovalService taskRemovalService;
+    private final PayoutService payoutService;
+
+    @GetMapping("/payout-requests")
+    public ResponseEntity<ApiResponse<PageResponse<PayoutRequestResponse>>> getPayoutRequests(
+            @RequestParam(required = false) String status,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        PageRequestDto pageReq = PageRequestDto.builder().page(page).size(size).build();
+        return ResponseEntity.ok(ApiResponse.ok("Danh sách đơn rút tiền retrieved",
+                payoutService.getAllPayoutRequests(status, pageReq)));
+    }
+
+    @PostMapping("/payout-requests/{id}/resolve")
+    public ResponseEntity<ApiResponse<PayoutRequestResponse>> resolvePayoutRequest(
+            @PathVariable Long id,
+            @Valid @RequestBody ResolvePayoutRequestDto req) {
+        return ResponseEntity.ok(ApiResponse.ok("Xử lý đơn rút tiền thành công",
+                payoutService.resolvePayoutRequest(id, req)));
+    }
 
     @GetMapping("/dashboard")
     public ResponseEntity<ApiResponse<AdminDashboardResponse>> getDashboard() {
