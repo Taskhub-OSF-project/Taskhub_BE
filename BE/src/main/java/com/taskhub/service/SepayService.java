@@ -15,6 +15,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -156,15 +158,13 @@ public class SepayService {
 
     private void verifySecurityToken(String authHeader) {
         String configuredToken = sepayProperties.getApiToken();
-        // Nếu server chưa cấu hình apiToken (trống), tạm thời bỏ qua xác thực cho môi
-        // trường dev/chưa thiết lập
         if (configuredToken == null || configuredToken.isBlank()) {
-            log.debug("SePay API Token is not configured; skipping verification.");
-            return;
+            log.error("SePay webhook rejected because its API token is not configured.");
+            throw TaskHubException.forbidden("SePay Webhook is not configured");
         }
 
         if (authHeader == null || authHeader.isBlank()) {
-            log.warn("Missing Authorization / API-Key header on SePay webhook (DEV HINT: Server is expecting Token='{}')", configuredToken);
+            log.warn("Missing Authorization / API-Key header on SePay webhook.");
             throw TaskHubException.forbidden("Unauthorized SePay Webhook - Missing Token");
         }
 
@@ -175,8 +175,10 @@ public class SepayService {
             providedToken = providedToken.substring(7).trim();
         }
 
-        if (!configuredToken.equals(providedToken)) {
-            log.warn("Invalid SePay Webhook Token received: '{}' (DEV HINT: Server is expecting Token='{}')", providedToken, configuredToken);
+        if (!MessageDigest.isEqual(
+                configuredToken.getBytes(StandardCharsets.UTF_8),
+                providedToken.getBytes(StandardCharsets.UTF_8))) {
+            log.warn("Invalid SePay webhook token received.");
             throw TaskHubException.forbidden("Unauthorized SePay Webhook - Invalid Token");
         }
     }

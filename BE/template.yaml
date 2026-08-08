@@ -50,6 +50,29 @@ Parameters:
     NoEcho: true
     Default: ''
     Description: Resend API key; required only when AppMailProvider is resend
+  AppSepayApiToken:
+    Type: String
+    NoEcho: true
+    MinLength: 16
+    Description: Secret token used to authenticate SePay webhook requests
+  AppSepayBankCode:
+    Type: String
+    Default: MB
+    Description: VietQR bank code
+  AppSepayBankAccount:
+    Type: String
+    Description: Bank account that receives SePay deposits
+  AppSepayBankName:
+    Type: String
+    Default: MBBank
+    Description: Bank display name
+  AppSepayAccountName:
+    Type: String
+    Description: Bank account holder display name
+  AppSepayQrTemplate:
+    Type: String
+    Default: compact
+    Description: VietQR display template
 
 Globals:
   Function:
@@ -125,6 +148,12 @@ Resources:
           APP_MAIL_FROM_EMAIL: !Ref AppMailFromEmail
           APP_MAIL_RESEND_API_KEY: !Ref AppMailResendApiKey
           APP_MAIL_REGION: ap-southeast-1
+          APP_SEPAY_API_TOKEN: !Ref AppSepayApiToken
+          APP_SEPAY_BANK_CODE: !Ref AppSepayBankCode
+          APP_SEPAY_BANK_ACCOUNT: !Ref AppSepayBankAccount
+          APP_SEPAY_BANK_NAME: !Ref AppSepayBankName
+          APP_SEPAY_ACCOUNT_NAME: !Ref AppSepayAccountName
+          APP_SEPAY_QR_TEMPLATE: !Ref AppSepayQrTemplate
           SUPABASE_URL: !Ref SupabaseUrl
           SUPABASE_SERVICE_ROLE_KEY: !Ref SupabaseServiceRoleKey
       Events:
